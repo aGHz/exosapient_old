@@ -1,0 +1,9 @@
+[submodule "usr/src/webcore"]
+	path = usr/src/webcore
+	url = git@github.com:enfoundry/WebCore.git
+[submodule "usr/src/marrow.templating"]
+	path = usr/src/marrow.templating
+	url = git@github.com:enfoundry/marrow.templating.git
+[submodule "usr/src/marrow.util"]
+	path = usr/src/marrow.util
+	url = git@github.com:enfoundry/marrow.util.git
