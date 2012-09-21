@@ -17,6 +17,8 @@ print 'import {mdl}web{r}'.format(**_ansi)
 import web
 print 'from web.core import {mdl}http{r}, {cls}Controller{r}, {obj}request{r}, {obj}response{r}'.format(**_ansi)
 from web.core import http, Controller, request, response
+print 'from exosapient.util import {mdl}mbna{r}'.format(**_ansi)
+from exosapient.util import mbna
 
 print 'from datetime import {cls}date{r}, {cls}time{r}, {cls}datetime{r}'.format(**_ansi)
 from datetime import date, time, datetime
