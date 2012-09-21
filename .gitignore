@@ -18,3 +18,5 @@ eggs/
 parts/
 .Python
 .installed.cfg
+
+src/exosapient/model/local.py

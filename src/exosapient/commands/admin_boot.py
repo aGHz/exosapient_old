@@ -17,6 +17,10 @@ print 'import {mdl}web{r}'.format(**_ansi)
 import web
 print 'from web.core import {mdl}http{r}, {cls}Controller{r}, {obj}request{r}, {obj}response{r}'.format(**_ansi)
 from web.core import http, Controller, request, response
+print 'import {mdl}urllib{r}, {mdl}urllib2{r}, {mdl}cookielib{r}'.format(**_ansi)
+import urllib, urllib2, cookielib
+print 'from bs4 import {cls}BeautifulSoup{r}'.format(**_ansi)
+from bs4 import BeautifulSoup
 print 'from exosapient.util import {mdl}mbna{r}'.format(**_ansi)
 from exosapient.util import mbna
 

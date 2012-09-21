@@ -18,7 +18,8 @@ setup(
             'jinja2',
             'IPython>=0.12',
             'psutil',
-            'BeautifulSoup',
+            'lxml',
+            'BeautifulSoup4',
             ],
         packages = find_packages(exclude=[
             'schema'
