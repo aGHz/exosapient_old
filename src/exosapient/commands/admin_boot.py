@@ -21,8 +21,8 @@ print 'import {mdl}urllib{r}, {mdl}urllib2{r}, {mdl}cookielib{r}'.format(**_ansi
 import urllib, urllib2, cookielib
 print 'from bs4 import {cls}BeautifulSoup{r}'.format(**_ansi)
 from bs4 import BeautifulSoup
-print 'from exosapient.util import {mdl}mbna{r}'.format(**_ansi)
-from exosapient.util import mbna
+print 'from exosapient.util import {mdl}mbna{r}, {mdl}scraping{r}'.format(**_ansi)
+from exosapient.util import mbna, scraping
 
 print 'from datetime import {cls}date{r}, {cls}time{r}, {cls}datetime{r}'.format(**_ansi)
 from datetime import date, time, datetime
