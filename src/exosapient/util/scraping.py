@@ -53,60 +53,69 @@ class Session(object):
         print '-' * 79
 
 
-class Scraper(object):
-    def __init__(self, body=None, session=None, **kwargs):
+class Page(object):
+    def __init__(self, body=None, session=None, url=None, data=None, *args, **kwargs):
+        if session is None:
+            session = Session()
         self.session = session
-        if body is not None:
-            self.parse(body=body, **kwargs)
-
-    def parse(*args, **kwargs):
-        pass
-
-    def parse_form(self, form=None, base_url=None):
-        if form is not None:
-            self.form = form
-
-        if getattr(self.form, 'name', None) != 'form':
-            raise Exception('Scraper.parse_form did not receive a BeautifulSoup form')
-
-        inputs = {}
-        for inp in self.form.find_all('input'):
-            inputs[inp['name']] = dict(inp.attrs)
-
-        data = dict(zip(inputs.keys(), [attrs.get('value', '').encode('ascii', 'ignore') for attrs in inputs.values()]))
-
-        action = self.form['action']
-        if base_url is not None:
-            action = urlparse.urljoin(base_url, action)
-        elif '://' not in action:
-            print 'WARNING: Scraper.parse_form: action "%s" relative but no base_url provided' % action
-
-        self.action = action
-        self.method = self.form['method']
-        self.inputs = inputs
+        self.url = url
         self.data = data
-        return self
+        self.body = body
 
-    def set_data(self, k, v):
-        self.data[k] = v
-        return self
+    def request(self, url=None, data=None, force=False, *args, **kwargs):
+        if self.body is not None and not force:
+            return self
 
-    def next(self, data=None, url=None, page_class=None):
-        if url is None:
-            url = self.action
-        if url is None:
-            raise Exception('Action not set')
-        if page_class is None:
-            page_class = self._next_scraper_class
+        if url is not None:
+            self.url = url
+        if self.url is None:
+            raise RequestError('Page URL not set')
 
-        if getattr(self, 'data', None) is None:
-            (resp, body) = self.session.get(url)
-        else:
+        if self.data is None:
+            self.data = data
+        elif data is not None:
             self.data.update(data)
-            (resp, body) = self.session.post(url, self.data)
-        return page_class(body=body, session=self.session, url=url)
 
+        if self.data is None:
+            (self.response, self.body) = self.session.get(self.url)
+        else:
+            (self.response, self.body) = self.session.post(self.url, self.data)
+        self.url = self.response.url
+        return self
+
+    def parse(self, *args, **kwargs):
+        return self
+
+class FormPage(Page):
+    def parse_form(self, *args, **kwargs):
+        (self.form_action,
+         self.form_method,
+         self.form_inputs,
+         self.form_data) = parse_bs4_form(self.form, self.url)
+        return self
+
+
+def parse_bs4_form(form, base_url=None):
+    if getattr(form, 'name', None) != 'form':
+        raise ParseError('Form not a BeautifulSoup4 form')
+
+    inputs = {}
+    for inp in form.find_all('input'):
+        inputs[inp['name']] = dict(inp.attrs)
+
+    data = dict(zip(inputs.keys(), [attrs.get('value', '').encode('ascii', 'ignore') for attrs in inputs.values()]))
+
+    action = form['action']
+    if base_url is not None:
+        action = urlparse.urljoin(base_url, action)
+    elif '://' not in action:
+        print 'WARNING: parse_bs4_form: action "%s" relative but no base URL set' % action
+
+    return (action, form['method'], inputs, data)
 
 
 class ParseError(Exception):
+    pass
+
+class RequestError(Exception):
     pass

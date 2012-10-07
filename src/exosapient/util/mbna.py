@@ -16,19 +16,19 @@ def login(cookie_jar=None, debug=False):
     session = scraping.Session(jar=cookie_jar)
 
     mbnahome = MBNAHomePage(session=session).request().parse()
-    security = mbnahome.next({'username': mbna_user}) # this might pass through a ChallengeRedirect
-    password = security.next({'answer': mbna_security[security.question]})
-    overview = password.next({'password': mbna_pass})
-    pprint(overview.__dict__)
+    security = mbnahome.next(user=mbna_user).parse() # already requested in MBNAHomePage
+    password = security.next(answer=mbna_security[security.question]).request().parse()
+    overview = password.next(password=mbna_pass).request().parse()
+    snapshot = overview.next(account=overview.__dict__.keys()[0]).request().parse()
 
-    snapshot = overview.next(overview.__dict__.keys()[0])
+    pprint(overview.__dict__)
     pprint(snapshot.__dict__)
 
     return (session, overview, snapshot)
 
 
-class SnapshotPage(scraping.Scraper):
-    def parse(self, body=None, url=None):
+class SnapshotPage(scraping.Page):
+    def parse(self, body=None):
         if body is not None:
             self.body = body
         soup = body_to_soup(self.body)
@@ -122,8 +122,8 @@ class SnapshotPage(scraping.Scraper):
             }
 
 
-class OverviewPage(scraping.Scraper):
-    def parse(self, body=None, url=None):
+class OverviewPage(scraping.Page):
+    def parse(self, body=None):
         if body is not None:
             self.body = body
         soup = body_to_soup(self.body)
@@ -148,7 +148,7 @@ class OverviewPage(scraping.Scraper):
                            data_raw['Total Minimum Payment Due:']).groupdict()
 
             accounts[number] = {
-                'link': urlparse.urljoin(url, link),
+                'link': urlparse.urljoin(self.url, link),
                 'available': dollar_to_float(data_raw['Credit Available:']),
                 'pay_min': dollar_to_float(pay['amt']),
                 'pay_date': datetime.date(int(pay['Y']), int(pay['M']), int(pay['D'])),
@@ -157,19 +157,17 @@ class OverviewPage(scraping.Scraper):
         self.accounts = accounts
         return self
 
-    def next(self, account_id):
-        return super(OverviewPage, self).next(url=self.accounts[account_id]['link'],
-                                              page_class=SnapshotPage)
+    def next(self, account=None):
+        if account is not None:
+            return SnapshotPage(url=self.accounts[account]['link'], session=self.session)
 
     @property
     def __dict__(self):
         return self.accounts
 
 
-class PasswordPage(scraping.Scraper):
-    _next_scraper_class = OverviewPage
-
-    def parse(self, body=None, url=None):
+class PasswordPage(scraping.FormPage):
+    def parse(self, body=None):
         if body is not None:
             self.body = body
         soup = body_to_soup(self.body)
@@ -178,14 +176,18 @@ class PasswordPage(scraping.Scraper):
         if form is None:
             raise scraping.ParseError('form[id="pwd_form.id"] not found')
 
-        self.parse_form(form, base_url=url)
+        self.form = form
+        self.parse_form()
+        if 'password' not in self.form_data:
+            raise scraping.ParseError('input[name="password"] not found')
         return self
 
+    def next(self, password):
+        self.form_data.update({'password': password})
+        return OverviewPage(url=self.form_action, data=self.form_data, session=self.session)
 
-class SecurityQuestion(scraping.Scraper):
-    _next_scraper_class = PasswordPage
-
-    def parse(self, body=None, url=None):
+class SecurityQuestion(scraping.FormPage):
+    def parse(self, body=None):
         if body is not None:
             self.body = body
         soup = body_to_soup(self.body)
@@ -196,31 +198,39 @@ class SecurityQuestion(scraping.Scraper):
             raise scraping.ParseError('label#question_id not found')
 
         self.question = q.text
-        self.parse_form(q.find_parent('form'), base_url=url)
+        self.form = q.find_parent('form')
+        self.parse_form()
+        if 'answer' not in self.form_data:
+            raise scraping.ParseError('input[name="answer"] not found')
         return self
 
+    def next(self, answer):
+        self.form_data.update({'answer': answer})
+        return PasswordPage(url=self.form_action, data=self.form_data, session=self.session)
 
-class ChallengeRedirect(scraping.Scraper):
-    _next_scraper_class = SecurityQuestion
 
-    def parse(self, body=None, **kwargs):
+class ChallengeRedirect(scraping.Page):
+    def parse(self, body=None):
         if body is not None:
             self.body = body
 
         re_goto = re.compile('goto\(\'(?P<url>.*?)\'\)', re.I | re.M | re.S | re.U)
         m = re_goto.search(self.body)
         if m is None:
-            raise scraping.ParseError('goto not found')
+            raise scraping.ParseError('goto(\'...\') not found')
 
         self.goto = m.group('url')
         return self
 
-    def next(self, base_url='https://www.onlineaccess.ca/NASApp/NetAccess/'):
-        url = urlparse.urljoin(base_url, self.goto)
-        return super(ChallengeRedirect, self).next(url=url)
+    def next(self):
+        url = urlparse.urljoin(self.url, self.goto)
+        return SecurityQuestion(url=url, session=self.session)
 
 
-class MBNAHomePage(scraping.Scraper):
+class MBNAHomePage(scraping.FormPage):
+    def __init__(self, url='http://mbna.ca/index.html', *args, **kwargs):
+        return super(MBNAHomePage, self).__init__(url=url, *args, **kwargs)
+
     def parse(self, body=None):
         if body is not None:
             self.body = body
@@ -230,36 +240,26 @@ class MBNAHomePage(scraping.Scraper):
         if not form.select('div.signinform'):
             raise scraping.ParseError('div.signinform not found in first form')
 
-        self.parse_form(form)
+        self.form = form
+        self.parse_form()
+        if 'username' not in self.form_data:
+            raise scraping.ParseError('input[name="username"] not found')
         return self
 
-    def request(self, url='http://mbna.ca/index.html'):
-        if not self.session:
-            raise Exception('MBNAHomePage.request failed: session not set')
-
-        self.url = url
-        (self.resp, self.body) = self.session.get(url)
-        return self
-
-    def next(self, data=None, url=None):
-        if url is None:
-            url = self.action
-        if url is None:
-            raise Exception('MBNAHomePage.next failed: action not set')
-
-        self.data.update(data)
-        (resp, body) = self.session.post(url, self.data)
+    def next(self, user):
+        # NB! Don't do MBNAHomePage.next().request()
+        # We must perform the request here to check if it's a challenge redirect page,
+        # a maintenance page or a security question page, so you only need to parse() the result
+        self.form_data.update({'username': user})
+        (resp, body) = self.session.post(self.form_action, self.form_data)
         if 'Maintenance' in resp.url:
             raise MaintenanceError()
-        # at this point we can get served either the challenge redirect page,
-        # or sometimes directly the security question page
-        # (e.g. if there was something wrong with the cookies)
         try:
-            redirect = ChallengeRedirect(body=body, session=self.session)
+            redirect = ChallengeRedirect(url=resp.url, body=body, session=self.session).parse()
         except scraping.ParseError:
-            return SecurityQuestion(body=body, session=self.session)
+            return SecurityQuestion(url=resp.url, body=body, session=self.session)
         else:
-            return redirect.next(base_url=url)
+            return redirect.next().request()
 
 
 class MaintenanceError(Exception):
