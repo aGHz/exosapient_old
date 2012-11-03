@@ -9,6 +9,7 @@ import urlparse
 
 from exosapient.model.local import mbna_user, mbna_security, mbna_pass
 from exosapient.util import scraping
+from exosapient.util.ansi import colors as ansi
 
 MONTHS = dict(zip(['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August',
                    'September', 'October', 'November', 'December'
@@ -82,8 +83,29 @@ class MBNA(object):
             self.get_snapshot(account, force=force)
         return self.snapshots
 
+    def get_latest_statement(self, account, force=False):
+        if self.overview is None:
+            self.get_overview()
+        if force or account not in self.statements:
+            self.statements[account] = {}
+        snapshot = self.get_snapshot(account)
+        if force or '_latest' not in self.statements[account]:
+            statement = snapshot.next(link='statements').request().parse()
+            self.statements[account]['_latest'] = statement
+            self.statements[account][statement.date] = statement
+            for s in statement.statements:
+                self.statements[account][s['closing_date']] = s
+        return self.statements[account]['_latest']
+
+    def load_latest_statements(self, force=True):
+        if self.overview is None:
+            self.get_overview()
+        for account in self.accounts:
+            self.get_latest_statement(account, force=force)
+        return self.statements
+
+
     def __ansistr__(self):
-        from exosapient.util.ansi import colors as ansi
         out = []
         for account in self.accounts:
             # first line: account, numbers, gauge
@@ -186,10 +208,10 @@ class MBNA(object):
                                 **ansi)]
 
 
-            line = " " * (len(account) + 2) + "-" * 30
+            # lines 6+: activity
+            line = " " * (len(account) + 2) + "-" * 86
             out += [line]
 
-            # lines 6+: activity
             activities = sorted(snap.activity, key=lambda a: a['trans_date'], reverse=True)
             for activity in activities:
                 line = " " * (len(account) + 2)
@@ -204,12 +226,20 @@ class MBNA(object):
                     line += "{green}"
                 elif activity['ref_num'] == 'TEMP':
                     line += "{yellow}"
-                line += "{amount: >10.2f}{reset}  " + color + "{desc}{reset}"
+                line += "{amount: >8.2f}{reset}  " + color + "{desc}{reset}"
                 out += [line.format(date=activity['trans_date'].strftime("%a, %b %d, %Y"),
                                     amount=activity['amount'],
                                     desc=activity['desc'],
                                     ref=activity['ref_num'],
                                     **ansi)]
+
+            # lines A+1+: latest statement
+            if '_latest' in self.statements.get(account, {}):
+                line = " " * (len(account) + 2) + "-" * 86
+                out += [line]
+
+                statement = self.statements[account]['_latest']
+                out += [statement.__ansistr__(prefix=" " * (len(account) + 2))]
 
             out += [""]
 
@@ -423,7 +453,6 @@ class SnapshotPage(scraping.Page):
                 'ref_num': ref_num,
                 'amount': dollar_to_float(amt),
                 })
-
         self.activity = activity
 
         # Extract various links
@@ -494,6 +523,84 @@ class StatementPage(scraping.FormPage):
         (m, d, y) = re.match('^(\w*) (\d*), (\d*)$', stmt_date).groups()
         self.date = datetime.date(int(y), MONTHS[m], int(d))
 
+        # Parse statement header data
+        header_t = soup.find('table', class_='acctdetailmodule')
+        header_ths = [" ".join(map(lambda s: s.strip(), th.strings)) for th in header_t.findAll('th')]
+        header_tds = [" ".join(map(lambda s: s.strip(), td.strings)) for td in header_t.findAll('td')]
+        header = dict(zip(header_ths, header_tds))
+        for k in header.keys():
+            if header[k].startswith('$'):
+                header[k] = dollar_to_float(header[k])
+        header['Account Number'] = re.match('^Ending in (?P<cc>\d+)$', header['Account Number']).group('cc')
+        self.account = header['Account Number']
+        header['Statement Closing Date'] = str_to_date(header['Statement Closing Date'])
+        header['Total Min. Payment Due Date'] = str_to_date(header['Total Min. Payment Due Date'])
+        self.header = header
+        self.days = int(header['Days in Billing Cycle'])
+        self.available = header['Credit Available']
+        self.limit = header['Credit Limit']
+        self.balance = self.limit - self.available
+        self.pay_amount = header['Total Min. Payment Due']
+        self.pay_date = header['Total Min. Payment Due Date']
+
+        # Parse statement activity
+        activity_t = soup.find('table', class_='acctregistermodule')
+        activity_trs = activity_t.find_all('tr')[1:]
+        activity_data = [[td.text.strip() for td in tr.find_all('td')] for tr in activity_trs]
+        currencies = {
+            'U.S. DOLLARDOLLAR': 'USD',
+            'U.S. DOLLAR': 'USD',
+            }
+        sections = {
+            'Payments and Other Credits': 'debit',
+            'Purchases and Adjustments': 'credit',
+            'Interest Charged': 'interest',
+            }
+        activity = []
+        activity_type = None
+        for row in activity_data:
+            (trans_date, post_date, desc, offer_id, ref_num, amt) = row
+            desc = re.sub('\s+', ' ', desc)
+            amt = dollar_to_float(amt)
+            trans_date = str_to_date(trans_date)
+            if desc in sections:
+                activity_type = sections[desc]
+                continue
+            if not trans_date:
+                if desc.startswith('FOREIGN CURRENCY'):
+                    (amt, currency) = desc[17:].split(' ', 1)
+                    activity[-1].update({
+                        'foreign_amount': dollar_to_float(amt),
+                        'foreign_currency': currencies.get(currency, currency),
+                        })
+                    continue
+                if desc.startswith('Interest on'):
+                    trans_date = activity[-1]['trans_date']
+            act = {
+                'type': activity_type,
+                'trans_date': trans_date,
+                'post_date': str_to_date(post_date),
+                'ref_num': ref_num,
+                'amount': amt,
+                }
+            if activity_type == 'credit':
+                # parse desc into name and location
+                (name, location) = desc.split(' - ', 1)
+                name = ' '.join([s.capitalize() for s in name.split(' ')])
+                location = location.split(' ')
+                location = ' '.join([s.capitalize() for s in location[:-1]] + location[-1:])
+                act.update({
+                    'desc_raw': desc,
+                    'desc': name,
+                    'location': location,
+                    })
+            else:
+                act.update({
+                    'desc': desc,
+                    })
+            activity.append(act)
+        self.activity = activity
+
         return self
 
     def next(self, statement_index=None):
@@ -506,6 +613,52 @@ class StatementPage(scraping.FormPage):
             'date': self.date,
             'statements': [stmt['closing_date'] for stmt in self.statements],
             }
+
+    def __ansistr__(self, prefix=""):
+        out = []
+        line = prefix + '{bold}{magenta}{due_date} {due_amt: >8.2f}  Minimum payment due'
+        out += [line.format(due_amt=self.pay_amount, due_date=self.pay_date.strftime("%a, %b %d, %Y"),
+                            **ansi)]
+        line = prefix + '{bold}{magenta}{date} {amount: >8.2f}  Statement covering {days} days, limit of {limit:.2f}'
+        out += [line.format(date=self.date.strftime("%a, %b %d, %Y"), days=self.days,
+                            amount=self.balance, limit=self.limit, **ansi)]
+
+        activities = self.activity
+        activities = sorted(self.activity, key=lambda a: (a['trans_date'], a['amount']), reverse=True)
+        for activity in activities:
+            line = prefix
+            params = ansi.copy()
+
+            if activity['amount'] < 0:
+                color = "{green}"
+            elif activity['type'] == 'interest':
+                color = "{yellow}"
+            else:
+                color = "{blue}"
+            line += color + "{date}{reset} "
+            if activity['amount'] < 0:
+                line += "{green}"
+            elif activity['type'] == 'interest':
+                if activity['amount'] > 0:
+                    line += "{red}"
+                else:
+                    line += "{yellow}"
+            if type(activity['amount']) == float:
+                line += "{amount: >8.2f}{reset}  "
+            else:
+                line += " " * 12
+            line += color + "{desc}{reset}"
+            if activity.get('location', None):
+                line += ", {location}{reset}"
+            act_date = activity['trans_date'].strftime("%a, %b %d, %Y") if activity['trans_date']\
+                            else " " * 17
+            out += [line.format(date=act_date,
+                                amount=activity['amount'],
+                                desc=activity['desc'],
+                                ref=activity['ref_num'],
+                                location=activity.get('location', ''),
+                                **ansi)]
+        return "\n".join(out)
 
 class MaintenanceError(Exception):
     def __init__(self):

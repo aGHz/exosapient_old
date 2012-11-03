@@ -65,6 +65,7 @@ class ManageCommand(Command):
         from exosapient.util.mbna import MBNA
         mbna = MBNA()
         mbna.load_snapshots()
+        mbna.load_latest_statements()
         print mbna.__ansistr__()
 
     def _load_app(self):
