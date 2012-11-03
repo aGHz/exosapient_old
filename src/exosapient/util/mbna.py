@@ -10,6 +10,9 @@ import urlparse
 from exosapient.model.local import mbna_user, mbna_security, mbna_pass
 from exosapient.util import scraping
 
+MONTHS = dict(zip(['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August',
+                   'September', 'October', 'November', 'December'
+                  ], range(1, 13)))
 
 def login(cookie_jar=None):
     session = scraping.Session(jar=cookie_jar)
@@ -28,10 +31,15 @@ def test(cookie_jar=None):
     overview = password.next(password=mbna_pass).request().parse()
     snapshot = overview.next(account=overview.__dict__.keys()[0]).request().parse()
 
+    statement = snapshot.next(link='statements').request().parse()
+    s1 = statement.next(statement_index=3).request().parse()
+
     pprint(overview.__dict__)
     pprint(snapshot.__dict__)
+    pprint(statement.__dict__)
+    pprint(s1.__dict__)
 
-    return (session, overview, snapshot)
+    return (session, overview, snapshot, statement, s1)
 
 
 class MBNAHomePage(scraping.FormPage):
@@ -54,7 +62,6 @@ class MBNAHomePage(scraping.FormPage):
         return self
 
     def next(self, user):
-        # NB! Don't do MBNAHomePage.next().request()
         # We must perform the request here to check if it's a challenge redirect page,
         # a maintenance page or a security question page, so you only need to parse() the result
         self.form_data.update({'username': user})
@@ -157,9 +164,9 @@ class OverviewPage(scraping.Page):
                            data_raw['Total Minimum Payment Due:']).groupdict()
 
             accounts[number] = {
-                'link': urlparse.urljoin(self.url, link),
+                'url': urlparse.urljoin(self.url, link),
                 'available': dollar_to_float(data_raw['Credit Available:']),
-                'pay_min': dollar_to_float(pay['amt']),
+                'pay_amount': dollar_to_float(pay['amt']),
                 'pay_date': datetime.date(int(pay['Y']), int(pay['M']), int(pay['D'])),
                 }
 
@@ -168,7 +175,7 @@ class OverviewPage(scraping.Page):
 
     def next(self, account=None):
         if account is not None:
-            return SnapshotPage(url=self.accounts[account]['link'], session=self.session)
+            return SnapshotPage(url=self.accounts[account]['url'], session=self.session)
 
     @property
     def __dict__(self):
@@ -193,11 +200,8 @@ class SnapshotPage(scraping.Page):
         updated = overview_t.stripped_strings.next()
         m = re.match('^As of (?P<month>\w+) (?P<D>\d+), (?P<Y>\d+) (?P<h>\d+):(?P<m>\d+) ET$',
                      updated).groupdict()
-        months = dict(zip(['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August',
-                           'September', 'October', 'November', 'December'
-                          ], range(1, 13)))
         updated = datetime.datetime(int(m['Y']),
-                                    months.get(m['month'], None),
+                                    MONTHS.get(m['month'], None),
                                     int(m['D']),
                                     int(m['h']),
                                     int(m['m']))
@@ -247,7 +251,20 @@ class SnapshotPage(scraping.Page):
                 })
 
         self.activity = activity
+
+        # Extract various links
+        self.links = {}
+        statements_a = soup.find('a', text=re.compile('Statements'))
+        if statements_a is None:
+            raise ParseError('a[text="Statements"] not found')
+        self.links['statements'] = urlparse.urljoin(self.url, statements_a['href'])
+
         return self
+
+    def next(self, link=None):
+        if link == 'statements':
+            url = self.links[link]
+            return StatementPage(url=url, session=self.session)
 
     @property
     def __dict__(self):
@@ -267,8 +284,54 @@ class SnapshotPage(scraping.Page):
             'last_pay_date': self.last_pay_date,
             'next_stmt_date': self.next_stmt_date,
             'activity': self.activity,
+            'links': self.links,
             }
 
+
+class StatementPage(scraping.FormPage):
+    def parse(self, body=None):
+        if body is not None:
+            self.body = body
+        soup = body_to_soup(self.body)
+
+        # Parse list of available statements
+        stmts_select = soup.select('select[name="STMT"]')
+        if stmts_select:
+            stmts_select = stmts_select[0]
+        else:
+            raise scraping.ParseError('select[name="STMT"] not found')
+        self.form = stmts_select.find_parent('form')
+        self.parse_form()
+        self.form_data['acrobatCheck'] = 3
+        stmt_values = [o['value'] for o in stmts_select.find_all('option')][:-2]
+        self.statements = []
+        for stmt in stmt_values:
+            (m, d, y) = [int(s) for s in stmt.split('.')[2].split('-')]
+            self.form_data['STMT'] = stmt
+            self.statements.append({
+                'closing_date': datetime.date(y, m, d),
+                'url': urlparse.urljoin(self.form_action, '?' + urllib.urlencode(self.form_data)),
+                'value': stmt,
+                })
+        del self.form_data['STMT']
+
+        # Parse statement date
+        stmt_date = soup.find('p', class_='stmtDate').text.strip()
+        (m, d, y) = re.match('^(\w*) (\d*), (\d*)$', stmt_date).groups()
+        self.date = datetime.date(int(y), MONTHS[m], int(d))
+
+        return self
+
+    def next(self, statement_index=None):
+        if statement_index is not None and statement_index < len(self.statements):
+            return StatementPage(url=self.statements[statement_index]['url'], session=self.session)
+
+    @property
+    def __dict__(self):
+        return {
+            'date': self.date,
+            'statements': [stmt['closing_date'] for stmt in self.statements],
+            }
 
 class MaintenanceError(Exception):
     def __init__(self):
