@@ -7,11 +7,12 @@ _ansi = {
     'mdl': ansi.green,
     'cls': ansi.blue,
     'obj': ansi.yellow,
+    'func': ansi.cyan,
     'r': ansi.reset
 }
 
 print ''
-print 'Available {mdl}modules{r}, {cls}classes{r} and {obj}objects{r}'.format(**_ansi)
+print 'Available {mdl}modules{r}, {cls}classes{r}, {obj}objects{r} and {func}functions{r}'.format(**_ansi)
 print '-' * 38
 print 'import {mdl}web{r}'.format(**_ansi)
 import web
@@ -26,6 +27,8 @@ from exosapient.util import mbna, scraping
 
 print 'from datetime import {cls}date{r}, {cls}time{r}, {cls}datetime{r}'.format(**_ansi)
 from datetime import date, time, datetime
+print 'from pprint import {func}pprint{r}'.format(**_ansi)
+from pprint import pprint
 #print 'from dateutil.relativedelta import {cls}relativedelta{r}'.format(**_ansi)
 #from dateutil.relativedelta import relativedelta
 #print 'from pytz import {cls}timezone{r}, {obj}utc{r}'.format(**_ansi)
