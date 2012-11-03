@@ -11,7 +11,7 @@ from exosapient.commands.manage import example
 
 
 COMMANDS = ['show_config', 'show_commands', # system commands
-            'example', # application commands
+            'example', 'mbna', # application commands
             ]
 
 class ManageCommand(Command):
@@ -60,6 +60,12 @@ class ManageCommand(Command):
                 examples = arg[len('examples='):].split(',')
         example.perform_example(example_option, examples)
 
+    def mbna(self, *args):
+        """Show information on MBNA accounts"""
+        from exosapient.util.mbna import MBNA
+        mbna = MBNA()
+        mbna.load_snapshots()
+        print mbna.__ansistr__()
 
     def _load_app(self):
         config_file = self.options.config_file
