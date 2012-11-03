@@ -42,6 +42,180 @@ def test(cookie_jar=None):
     return (session, overview, snapshot, statement, s1)
 
 
+class MBNA(object):
+    session = None
+    overview = None
+    snapshots = {}
+    statements = {}
+
+    def __init__(self, login=True, cookie_jar=None):
+        self.session = scraping.Session(jar=cookie_jar)
+        if login:
+            self.get_overview()
+
+    def get_overview(self):
+        if self.overview is None:
+            mbnahome = MBNAHomePage(session=self.session).request().parse()
+            security = mbnahome.next(user=mbna_user).parse()
+            password = security.next(answer=mbna_security[security.question]).request().parse()
+            overview = password.next(password=mbna_pass).request().parse()
+
+            self.overview = overview
+
+    @property
+    def accounts(self):
+        if self.overview is None:
+            self.get_overview()
+        return self.overview.__dict__.keys()
+
+    def get_snapshot(self, account, force=False):
+        if self.overview is None:
+            self.get_overview()
+        if force or account not in self.snapshots:
+            self.snapshots[account] = self.overview.next(account=account).request().parse()
+        return self.snapshots[account]
+
+    def load_snapshots(self, force=True):
+        if self.overview is None:
+            self.get_overview()
+        for account in self.accounts:
+            self.get_snapshot(account, force=force)
+        return self.snapshots
+
+    def __ansistr__(self):
+        from exosapient.util.ansi import colors as ansi
+        out = []
+        for account in self.accounts:
+            # first line: account, numbers, gauge
+            line = "{yellow}{account}{reset}  "
+            if account not in self.snapshots:
+                data = self.overview.accounts[account]
+                line += "{green}" if data['available'] > 0 else "{red}"
+                line += "{available}{reset}"
+                # second line: pay due
+                line += "  Due: "
+                line += "{red}" if data['pay_amount'] > 0 else "{green}"
+                line += "{amount}{reset} on "
+                if datetime.date.today() > data['pay_date']:
+                    line += "{red}" if data['pay_amount'] > 0 else "{white}"
+                else:
+                    line += "{yellow}" if data['pay_amount'] > 0 else "{green}"
+                line += "{duedate}{reset}"
+                out += [line.format(account=account,
+                                    available=data['available'],
+                                    amount=data['pay_amount'],
+                                    duedate=data['pay_date'].strftime("%a, %b %d, %Y"),
+                                    **ansi)]
+                out += [""]
+                continue
+
+            snap = self.snapshots[account]
+            # generate gauge
+            percent = round(100*100*(snap.balance+snap.temp)/snap.limit)/100
+            perfifty = int(round(50*(snap.balance+snap.temp)/snap.limit))
+            #gauge = ("{red}" if perfifty > 0 else "{green}") + "["
+            gauge = "["
+            if perfifty > 0:
+                gauge += "{red}" + "*" * perfifty
+            if perfifty < 50:
+                gauge += "{green}" + "=" * (50 - perfifty)
+            gauge += "]{reset}"
+
+            # first line: account, numbers, gauge
+            line = "{yellow}{account}{reset}  "
+
+            numbers = []
+            if snap.available:
+                numbers += ["{green}{available}{reset}"]
+            if snap.temp:
+                numbers += ["{yellow}{temp}{reset}"]
+            if snap.balance:
+                numbers += ["{red}{balance}{reset}"]
+            line += " + ".join(numbers)
+            line += " > " if snap.balance > snap.limit else " = "
+            line += "{limit}  "
+
+            line += gauge + " {percent}%"
+
+            out += [line.format(account=account,
+                                available=snap.available,
+                                temp=snap.temp,
+                                balance=snap.balance,
+                                limit=snap.limit,
+                                percent=percent,
+                                **ansi)]
+
+            # second line: pay due
+            line = " " * (len(account) + 2)
+            line += "Due:  "
+            if datetime.date.today() < snap.pay_date:
+                line += "{yellow}" if snap.pay_amount > 0 else "{green}"
+            else:
+                line += "{red}" if snap.pay_amount > 0 else "{white}"
+            line += "{amount} on {duedate}{reset}"
+            out += [line.format(amount=snap.pay_amount,
+                                duedate=snap.pay_date.strftime("%a, %b %d, %Y"),
+                                **ansi)]
+
+            # third line: last payment
+            line = " " * (len(account) + 2)
+            line += "Paid: "
+            if snap.last_pay_date < snap.last_stmt_date:
+                line += "{red}"
+            elif snap.last_pay_date >= snap.last_stmt_date and snap.last_pay_date <= snap.pay_date:
+                line += "{green}"
+            elif snap.last_pay_date > snap.pay_date and snap.last_pay_date < snap.next_stmt_date:
+                line += "{yellow}"
+            line += "{amount} on {duedate}{reset}"
+            out += [line.format(amount=snap.last_pay_amount,
+                                duedate=snap.last_pay_date.strftime("%a, %b %d, %Y"),
+                                **ansi)]
+
+            # fourth line: next statement
+            line = " " * (len(account) + 2)
+            line += "Next: on "
+            days_left = (snap.next_stmt_date - datetime.date.today()).days
+            if days_left <= 5:
+                line += "{yellow}"
+            elif days_left <= 10:
+                line += "{green}"
+            else:
+                line += "{white}"
+            line += "{nextdate}{reset}"
+            out += [line.format(nextdate=snap.next_stmt_date.strftime("%a, %b %d, %Y"),
+                                **ansi)]
+
+
+            line = " " * (len(account) + 2) + "-" * 30
+            out += [line]
+
+            # lines 6+: activity
+            activities = sorted(snap.activity, key=lambda a: a['trans_date'], reverse=True)
+            for activity in activities:
+                line = " " * (len(account) + 2)
+                if activity['amount'] < 0:
+                    color = "{green}"
+                elif activity['ref_num'] == 'TEMP':
+                    color = "{yellow}"
+                else:
+                    color = "{blue}"
+                line += color + "{date}{reset} "
+                if activity['amount'] < 0:
+                    line += "{green}"
+                elif activity['ref_num'] == 'TEMP':
+                    line += "{yellow}"
+                line += "{amount: >10.2f}{reset}  " + color + "{desc}{reset}"
+                out += [line.format(date=activity['trans_date'].strftime("%a, %b %d, %Y"),
+                                    amount=activity['amount'],
+                                    desc=activity['desc'],
+                                    ref=activity['ref_num'],
+                                    **ansi)]
+
+            out += [""]
+
+        return "\n".join(out)
+
+
 class MBNAHomePage(scraping.FormPage):
     def __init__(self, url='http://mbna.ca/index.html', *args, **kwargs):
         return super(MBNAHomePage, self).__init__(url=url, *args, **kwargs)
