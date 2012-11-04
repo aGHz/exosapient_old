@@ -42,6 +42,17 @@ def test(cookie_jar=None):
 
     return (session, overview, snapshot, statement, s1)
 
+def test1(cookie_jar=None):
+    session = scraping.Session(jar=cookie_jar)
+
+    mbnahome = MBNAHomePage(session=session).request().parse()
+    security = mbnahome.next(user=mbna_user).parse()
+    password = security.next(answer=mbna_security[security.question]).request().parse()
+    overview = password.next(password=mbna_pass).request().parse()
+    snapshot = overview.next(account=overview.__dict__.keys()[0]).request().parse()
+
+    return (session, overview, snapshot)
+
 
 class MBNA(object):
     session = None
@@ -89,13 +100,12 @@ class MBNA(object):
         if force or account not in self.statements:
             self.statements[account] = {}
         snapshot = self.get_snapshot(account)
-        if force or '_latest' not in self.statements[account]:
+        if force or not self.statements.get(account, False):
             statement = snapshot.next(link='statements').request().parse()
-            self.statements[account]['_latest'] = statement
             self.statements[account][statement.date] = statement
-            for s in statement.statements:
-                self.statements[account][s['closing_date']] = s
-        return self.statements[account]['_latest']
+        else:
+            statement = self.statements[account].values()[0]
+        return statement
 
     def load_latest_statements(self, force=True):
         if self.overview is None:
@@ -104,143 +114,40 @@ class MBNA(object):
             self.get_latest_statement(account, force=force)
         return self.statements
 
+    def get_statement(self, account, index):
+        if not self.statements.get(account, False):
+            latest = self.get_latest_statement(account, force=True)
+        else:
+            latest = self.statements[account].values()[0]
+        statement = latest.next(statement_index=index).request().parse()
+        self.statements[account][statement.date] = statement
+        return statement
+
+    def load_statements(self, index, force=True):
+        if self.overview is None:
+            self.get_overview()
+        for account in self.accounts:
+            self.get_statement(account, index)
+        return self.statements
+
 
     def __ansistr__(self):
         out = []
         for account in self.accounts:
-            # first line: account, numbers, gauge
-            line = "{yellow}{account}{reset}  "
+            prefix = ' ' * (len(account) + 2)
+            line = "{yellow}{account}{reset}  ".format(account=account, **ansi)
             if account not in self.snapshots:
-                data = self.overview.accounts[account]
-                line += "{green}" if data['available'] > 0 else "{red}"
-                line += "{available}{reset}"
-                # second line: pay due
-                line += "  Due: "
-                line += "{red}" if data['pay_amount'] > 0 else "{green}"
-                line += "{amount}{reset} on "
-                if datetime.date.today() > data['pay_date']:
-                    line += "{red}" if data['pay_amount'] > 0 else "{white}"
-                else:
-                    line += "{yellow}" if data['pay_amount'] > 0 else "{green}"
-                line += "{duedate}{reset}"
-                out += [line.format(account=account,
-                                    available=data['available'],
-                                    amount=data['pay_amount'],
-                                    duedate=data['pay_date'].strftime("%a, %b %d, %Y"),
-                                    **ansi)]
-                out += [""]
-                continue
-
-            snap = self.snapshots[account]
-            # generate gauge
-            percent = round(100*100*(snap.balance+snap.temp)/snap.limit)/100
-            perfifty = int(round(50*(snap.balance+snap.temp)/snap.limit))
-            #gauge = ("{red}" if perfifty > 0 else "{green}") + "["
-            gauge = "["
-            if perfifty > 0:
-                gauge += "{red}" + "*" * perfifty
-            if perfifty < 50:
-                gauge += "{green}" + "=" * (50 - perfifty)
-            gauge += "]{reset}"
-
-            # first line: account, numbers, gauge
-            line = "{yellow}{account}{reset}  "
-
-            numbers = []
-            if snap.available:
-                numbers += ["{green}{available}{reset}"]
-            if snap.temp:
-                numbers += ["{yellow}{temp}{reset}"]
-            if snap.balance:
-                numbers += ["{red}{balance}{reset}"]
-            line += " + ".join(numbers)
-            line += " > " if snap.balance > snap.limit else " = "
-            line += "{limit}  "
-
-            line += gauge + " {percent}%"
-
-            out += [line.format(account=account,
-                                available=snap.available,
-                                temp=snap.temp,
-                                balance=snap.balance,
-                                limit=snap.limit,
-                                percent=percent,
-                                **ansi)]
-
-            # second line: pay due
-            line = " " * (len(account) + 2)
-            line += "Due:  "
-            if datetime.date.today() < snap.pay_date:
-                line += "{yellow}" if snap.pay_amount > 0 else "{green}"
+                # we only have information from the overview
+                out += [line + self.overview.__ansistr__()]
             else:
-                line += "{red}" if snap.pay_amount > 0 else "{white}"
-            line += "{amount} on {duedate}{reset}"
-            out += [line.format(amount=snap.pay_amount,
-                                duedate=snap.pay_date.strftime("%a, %b %d, %Y"),
-                                **ansi)]
+                # display the information from the snapshot
+                out += [line + self.snapshots[account].__ansistr__(prefix=prefix)]
 
-            # third line: last payment
-            line = " " * (len(account) + 2)
-            line += "Paid: "
-            if snap.last_pay_date < snap.last_stmt_date:
-                line += "{red}"
-            elif snap.last_pay_date >= snap.last_stmt_date and snap.last_pay_date <= snap.pay_date:
-                line += "{green}"
-            elif snap.last_pay_date > snap.pay_date and snap.last_pay_date < snap.next_stmt_date:
-                line += "{yellow}"
-            line += "{amount} on {duedate}{reset}"
-            out += [line.format(amount=snap.last_pay_amount,
-                                duedate=snap.last_pay_date.strftime("%a, %b %d, %Y"),
-                                **ansi)]
-
-            # fourth line: next statement
-            line = " " * (len(account) + 2)
-            line += "Next: on "
-            days_left = (snap.next_stmt_date - datetime.date.today()).days
-            if days_left <= 5:
-                line += "{yellow}"
-            elif days_left <= 10:
-                line += "{green}"
-            else:
-                line += "{white}"
-            line += "{nextdate}{reset}"
-            out += [line.format(nextdate=snap.next_stmt_date.strftime("%a, %b %d, %Y"),
-                                **ansi)]
-
-
-            # lines 6+: activity
-            line = " " * (len(account) + 2) + "-" * 86
-            out += [line]
-
-            activities = sorted(snap.activity, key=lambda a: a['trans_date'], reverse=True)
-            for activity in activities:
-                line = " " * (len(account) + 2)
-                if activity['amount'] < 0:
-                    color = "{green}"
-                elif activity['ref_num'] == 'TEMP':
-                    color = "{yellow}"
-                else:
-                    color = "{blue}"
-                line += color + "{date}{reset} "
-                if activity['amount'] < 0:
-                    line += "{green}"
-                elif activity['ref_num'] == 'TEMP':
-                    line += "{yellow}"
-                line += "{amount: >8.2f}{reset}  " + color + "{desc}{reset}"
-                out += [line.format(date=activity['trans_date'].strftime("%a, %b %d, %Y"),
-                                    amount=activity['amount'],
-                                    desc=activity['desc'],
-                                    ref=activity['ref_num'],
-                                    **ansi)]
-
-            # lines A+1+: latest statement
-            if '_latest' in self.statements.get(account, {}):
-                line = " " * (len(account) + 2) + "-" * 86
-                out += [line]
-
-                statement = self.statements[account]['_latest']
-                out += [statement.__ansistr__(prefix=" " * (len(account) + 2))]
-
+                # display the information from the available statements
+                statements = sorted(self.statements.get(account, {}).values(), key=lambda s: s.date, reverse=True)
+                for statement in statements:
+                    out += [prefix + "-" * 87]
+                    out += [statement.__ansistr__(prefix=prefix)]
             out += [""]
 
         return "\n".join(out)
@@ -385,6 +292,28 @@ class OverviewPage(scraping.Page):
     def __dict__(self):
         return self.accounts
 
+    def __ansistr__(self, account=None):
+        if account is None:
+            return "\n\n".join(["{yellow}{account}{reset}  ".format(account=a, **ansi)\
+                                + self.__ansistr__(account=a) for a in self.accounts])\
+
+        data = self.accounts[account]
+        line = ''
+        line += "{green}" if data['available'] > 0 else "{red}"
+        line += "{available}{reset}"
+        line += "  Due: "
+        line += "{red}" if data['pay_amount'] > 0 else "{green}"
+        line += "{amount}{reset} on "
+        if datetime.date.today() > data['pay_date']:
+            line += "{red}" if data['pay_amount'] > 0 else "{white}"
+        else:
+            line += "{yellow}" if data['pay_amount'] > 0 else "{green}"
+        line += "{duedate}{reset}"
+        return line.format(available=data['available'],
+                           amount=data['pay_amount'],
+                           duedate=data['pay_date'].strftime("%a, %b %d, %Y"),
+                           **ansi)
+
 
 class SnapshotPage(scraping.Page):
     def parse(self, body=None):
@@ -442,17 +371,55 @@ class SnapshotPage(scraping.Page):
         activity_trs = activity_t.find_all('tr')[1:]
         activity_data = [[td.text.strip() for td in tr.find_all('td')] for tr in activity_trs]
         activity = []
+        currencies = {
+            'U.S. DOLLARDOLLAR': 'USD',
+            'U.S. DOLLAR': 'USD',
+            }
         for row in activity_data:
             (trans_date, post_date, desc, offer_id, ref_num, amt) = row
-            if not trans_date:
+            desc = re.sub('\s+', ' ', desc)
+            amt = dollar_to_float(amt)
+            trans_date = str_to_date(trans_date)
+            if trans_date is None:
+                trans_date = activity[-1]['trans_date'] if activity else datetime.date.today()
+                if desc.startswith('FOREIGN CURRENCY'):
+                    # doesn't look like foreign currency appears in snapshots
+                    (amt, currency) = desc[17:].split(' ', 1)
+                    activity[-1].update({
+                        'foreign_amount': dollar_to_float(amt),
+                        'foreign_currency': currencies.get(currency, currency),
+                        })
                 continue
-            activity.append({
-                'trans_date': str_to_date(trans_date),
+            if desc == 'PAYMENT - THANK YOU':
+                desc = 'Payment, thank you'
+            act = {
+                'type': 'debit' if amt < 0 else ('credit_temp' if ref_num == 'TEMP' else 'credit'),
+                'trans_date': trans_date,
                 'post_date': str_to_date(post_date),
-                'desc': re.sub('\s+', ' ', desc),
+                'desc': desc,
                 'ref_num': ref_num,
-                'amount': dollar_to_float(amt),
-                })
+                'amount': amt,
+                }
+            if amt > 0:
+                # parse desc into name and location
+                (name, location) = desc.split(' - ', 1)
+                name = ' '.join([s.capitalize() for s in name.split(' ')])
+                location = location.split(' ')
+                if len(location[-1]) == 2:
+                    # last part is the state/province
+                    location = ' '.join([s.capitalize() for s in location[:-1]] + location[-1:])
+                else:
+                    location = ' '.join([s.capitalize() for s in location])
+                act.update({
+                    'desc_raw': desc,
+                    'desc': name,
+                    'location': location,
+                    })
+            else:
+                act.update({
+                    'desc': desc,
+                    })
+            activity.append(act)
         self.activity = activity
 
         # Extract various links
@@ -489,6 +456,131 @@ class SnapshotPage(scraping.Page):
             'activity': self.activity,
             'links': self.links,
             }
+
+    def __ansistr__(self, prefix=''):
+        entries = list(self.activity)
+        # system line: today with limit, balance, temp, avail
+        entries.append({
+            'type': 'system',
+            'trans_date': datetime.date.today(),
+            'amount': self.limit,
+            'desc': "= {red}{balance}{reset} + {yellow}{temp}{reset} + {green}{avail}"\
+                    .format(balance=self.balance, temp=self.temp, avail=self.available, **ansi),
+            })
+        # system line: today with balance+temp and gauge
+        percent = round(100*100*(self.balance+self.temp)/self.limit)/100
+        perfifty = int(round(50*(self.balance+self.temp)/self.limit))
+        gauge = "{reset}["
+        if perfifty > 0:
+            gauge += "{red}" + "*" * perfifty
+        if perfifty < 50:
+            gauge += "{green}" + "=" * (50 - perfifty)
+        gauge += "{reset}]"
+        entries.append({
+            'type': 'system',
+            'trans_date': datetime.date.today(),
+            'amount': self.balance + self.temp,
+            'desc': (gauge + " {percent}%").format(percent=percent, **ansi),
+            '_amtcolot': '{red}',
+            })
+        # system line: payment due
+        days = (self.pay_date - datetime.date.today()).days
+        if self.pay_amount > 0:
+            if days <= 5: days_color = '{red}'
+            elif days <= 10: days_color = '{yellow}'
+            else: days_color = '{green}'
+        else:
+            days_color = '{linecolor}'
+        if days > 0:
+            desc = 'in %s%d{linecolor} days' % (days_color, days)
+        elif days < 0:
+            desc = '%s%d days ago{linecolor}' % (days_color, -1 * days)
+        else:
+            desc = '%stoday{linecolor}' % days_color
+        entries.append({
+            'type': 'system',
+            'trans_date': self.pay_date,
+            'amount': self.pay_amount,
+            'desc': 'Payment due ' + desc,
+            '_amtcolor': days_color.format(**ansi) if days_color != '{linecolor}' else '{linecolor}',
+            })
+        # system line: last payment
+        if self.last_pay_date < self.last_stmt_date:
+            last_pay_color = "{linecolor}"
+        elif self.last_pay_date >= self.last_stmt_date and self.last_pay_date <= self.pay_date:
+            last_pay_color = "{green}"
+        elif self.last_pay_date > self.pay_date and self.last_pay_date < self.next_stmt_date:
+            last_pay_color = "{yellow}"
+        entries.append({
+            'type': 'system',
+            'trans_date': self.last_pay_date,
+            'amount': self.last_pay_amount,
+            'desc': 'Last payment received',
+            '_amtcolor': last_pay_color,
+            })
+        # system line: next invoice
+        entries.append({
+            'type': 'system',
+            'trans_date': self.next_stmt_date,
+            'amount': '    ----',
+            'desc': 'Next invoice',
+            })
+
+        # print the lines
+        out = []
+        activities = sorted(entries, key=lambda a: (a['trans_date'], a['amount']), reverse=True)
+        line_colors = {'system': ansi['magenta'],
+                       'debit': ansi['green'],
+                       'credit': ansi['blue'],
+                       'credit_temp': ansi['yellow']}
+        first = True
+        for activity in activities:
+            if first:
+                line = ''
+                first = False
+            else:
+                line = prefix
+            line += '{linecolor}'
+            params = ansi.copy()
+            params['linecolor'] = line_colors[activity.get('type', 'system')]
+
+            # date
+            line += '{date} '
+            params['date'] = activity['trans_date'].strftime("%a, %b %d, %Y") if activity['trans_date'] else " " * 17
+
+            # amount
+            if type(activity['amount']) == float:
+                line += '{amtcolor}{amount: >8.2f}{linecolor}  '
+            else:
+                line += '{amtcolor}{amount}{linecolor}  '
+            params['amount'] = activity['amount']
+            if activity['type'] == 'credit':
+                params['amtcolor'] = ansi['reset']
+            elif '_amtcolor' in activity:
+                params['amtcolor'] = activity['_amtcolor']
+                if params['amtcolor'].startswith('{'):
+                    params['amtcolor'] = params['amtcolor'].format(**params)
+            else:
+                params['amtcolor'] = params['linecolor']
+
+            # foreign amount
+            if activity.get('foreign_amount', None):
+                line += "{reset}({foreign_amount} {foreign_currency}){linecolor} "
+                params['foreign_amount'] = activity['foreign_amount']
+                params['foreign_currency'] = activity['foreign_currency']
+
+            # desc
+            line += '{desc}{reset}'
+            params['desc'] = activity['desc'].format(**params)
+            if activity.get('location', None):
+                line += ", {location}{reset}"
+                params['location'] = activity['location']
+
+            out += [line.format(**params)]
+
+        return "\n".join(out)
+
+
 
 
 class StatementPage(scraping.FormPage):
@@ -529,7 +621,7 @@ class StatementPage(scraping.FormPage):
         header_tds = [" ".join(map(lambda s: s.strip(), td.strings)) for td in header_t.findAll('td')]
         header = dict(zip(header_ths, header_tds))
         for k in header.keys():
-            if header[k].startswith('$'):
+            if header[k].startswith('$') or header[k].startswith('-'):
                 header[k] = dollar_to_float(header[k])
         header['Account Number'] = re.match('^Ending in (?P<cc>\d+)$', header['Account Number']).group('cc')
         self.account = header['Account Number']
@@ -583,6 +675,8 @@ class StatementPage(scraping.FormPage):
                 'ref_num': ref_num,
                 'amount': amt,
                 }
+            if desc == 'PAYMENT - THANK YOU':
+                desc = 'Payment, thank you'
             if activity_type == 'credit':
                 # parse desc into name and location
                 (name, location) = desc.split(' - ', 1)
@@ -629,6 +723,7 @@ class StatementPage(scraping.FormPage):
             line = prefix
             params = ansi.copy()
 
+            # date
             if activity['amount'] < 0:
                 color = "{green}"
             elif activity['type'] == 'interest':
@@ -636,6 +731,10 @@ class StatementPage(scraping.FormPage):
             else:
                 color = "{blue}"
             line += color + "{date}{reset} "
+            act_date = activity['trans_date'].strftime("%a, %b %d, %Y") if activity['trans_date']\
+                            else " " * 17
+
+            # amount
             if activity['amount'] < 0:
                 line += "{green}"
             elif activity['type'] == 'interest':
@@ -647,16 +746,23 @@ class StatementPage(scraping.FormPage):
                 line += "{amount: >8.2f}{reset}  "
             else:
                 line += " " * 12
+
+            # foreign amount
+            if activity.get('foreign_amount', None):
+                line += "({foreign_amount} {foreign_currency}) "
+
+            # desc
             line += color + "{desc}{reset}"
             if activity.get('location', None):
                 line += ", {location}{reset}"
-            act_date = activity['trans_date'].strftime("%a, %b %d, %Y") if activity['trans_date']\
-                            else " " * 17
+
             out += [line.format(date=act_date,
                                 amount=activity['amount'],
                                 desc=activity['desc'],
                                 ref=activity['ref_num'],
                                 location=activity.get('location', ''),
+                                foreign_amount=activity.get('foreign_amount', ''),
+                                foreign_currency=activity.get('foreign_currency', ''),
                                 **ansi)]
         return "\n".join(out)
 

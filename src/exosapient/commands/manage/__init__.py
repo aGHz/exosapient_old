@@ -66,6 +66,8 @@ class ManageCommand(Command):
         mbna = MBNA()
         mbna.load_snapshots()
         mbna.load_latest_statements()
+        mbna.load_statements(1)
+        mbna.load_statements(2)
         print mbna.__ansistr__()
 
     def _load_app(self):
