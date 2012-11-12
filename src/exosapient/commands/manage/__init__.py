@@ -62,12 +62,18 @@ class ManageCommand(Command):
 
     def mbna(self, *args):
         """Show information on MBNA accounts"""
+        try:
+            nr_statements = int(args[0])
+        except Exception:
+            nr_statements = 0
+
         from exosapient.util.mbna import MBNA
         mbna = MBNA()
         mbna.load_snapshots()
-        mbna.load_latest_statements()
-        mbna.load_statements(1)
-        mbna.load_statements(2)
+        if nr_statements > 0:
+            mbna.load_latest_statements()
+        for i in range(1, nr_statements):
+            mbna.load_statements(i)
         print mbna.__ansistr__()
 
     def _load_app(self):
