@@ -1,56 +1,9 @@
-import cookielib
-import os
-import pickle
-import urllib
-import urllib2
+from bs4 import BeautifulSoup, Comment
+from functools import wraps
 import urlparse
 
-UA_STRINGS = {
-    'chrome21': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_7_4) AppleWebKit/537.1 (KHTML, like Gecko) Chrome/21.0.1180.89 Safari/537.1',
-    }
-
-
-class Session(object):
-    def __init__(self, jar=None, ua_string='chrome21'):
-        # Prepare cookie jar
-        # The jar parameter can be either a string containing a pickled list of cookies
-        # or a path to a file containing such a string
-        self.jar = cookielib.CookieJar()
-        if isinstance(jar, basestring):
-            if os.path.isfile(jar):
-                with open(jar, 'r') as f:
-                    cookies = pickle.load(f)
-            else:
-                cookies = pickle.loads(jar)
-            for cookie in cookies:
-                self.jar.set_cookie(cookie)
-
-        # Prepare urllib2 opener
-        ua_string = UA_STRINGS.get(ua_string, None)
-        self.opener = urllib2.build_opener(urllib2.HTTPCookieProcessor(self.jar))
-        if ua_string is not None:
-            self.opener.addheaders = [('User-agent', ua_string)]
-
-    def get(self, url):
-        resp = self.opener.open(url)
-        return (resp, resp.read())
-
-    def post(self, url, data):
-        resp = self.opener.open(url, urllib.urlencode(data))
-        return (resp, resp.read())
-
-    def cookies(self, name=None):
-        cookies = [c for c in self.jar]
-        if name is not None:
-            if not isinstance(name, list):
-                name = [name]
-            cookies = [c for c in cookies if c.name in name]
-        return cookies
-
-    def print_cookies(self):
-        print '--- [cookie jar] ' + '-' * 62
-        for cookie in self.jar: print cookie
-        print '-' * 79
+from xo.scraping.exc import ParseError, RequestError
+from xo.scraping.session import Session
 
 
 class Page(object):
@@ -86,6 +39,19 @@ class Page(object):
     def parse(self, *args, **kwargs):
         return self
 
+    @classmethod
+    def parser(cls, f):
+        @wraps(f)
+        def wrapper(self, *args, **kwargs):
+            if self.body is None:
+                if '_body' in kwargs:
+                    self.body = kwargs['_body']
+                else:
+                    self.request(**kwargs.get('_data', {}))
+            self.soup = body_to_soup(self.body)
+            return f(self, *args, **kwargs)
+        return wrapper
+
 class FormPage(Page):
     def parse_form(self, *args, **kwargs):
         (self.form_action,
@@ -113,9 +79,10 @@ def parse_bs4_form(form, base_url=None):
 
     return (action, form['method'], inputs, data)
 
+def body_to_soup(body):
+    soup = BeautifulSoup(body)
+    comments = soup.find_all(text=lambda e: isinstance(e, Comment))
+    map(lambda e: e.extract(), comments) # they pose problems, just get them out
+    return soup
 
-class ParseError(Exception):
-    pass
 
-class RequestError(Exception):
-    pass
