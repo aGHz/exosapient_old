@@ -51,7 +51,8 @@ class Page(object):
                 else:
                     self.request(**kwargs.get('_data', {}))
             self.soup = body_to_soup(self.body)
-            if kwargs.get('_save', False):
+            save = kwargs.get('_save', False)
+            if save:
                 from datetime import datetime
                 f = open('/tmp/{cls}_{now}.html'.format(
                     cls=self.__class__.__name__,
@@ -59,9 +60,12 @@ class Page(object):
                 f.write(BeautifulSoup(self.body).prettify().encode('utf8')) # want comments, don't use body_to_soup
                 f.close()
             try:
+                if '_body' in kwargs: del kwargs['_body']
+                if '_data' in kwargs: del kwargs['_data']
+                if '_save' in kwargs: del kwargs['_save']
                 return parser(self, *args, **kwargs)
             except Exception:
-                if not kwargs.get('_save', False):
+                if not save:
                     from datetime import datetime
                     f = open('/tmp/{cls}_{now}.html'.format(
                         cls=self.__class__.__name__,
