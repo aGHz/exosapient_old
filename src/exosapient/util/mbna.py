@@ -183,6 +183,7 @@ class MBNAHomePage(FormPage):
         try:
             redirect = ChallengeRedirect(url=resp.url, body=body, session=self.session)
         except ParseError:
+            print 'WARNING: navigateToUrl not found in ChallengeRedirect'
             return SecurityQuestion(url=resp.url, body=body, session=self.session)
         else:
             return redirect.next()
@@ -191,10 +192,10 @@ class MBNAHomePage(FormPage):
 class ChallengeRedirect(Page):
     @Page.parser
     def parse(self):
-        re_goto = re.compile('goto\(\'(?P<url>.*?)\'\)', re.I | re.M | re.S | re.U)
+        re_goto = re.compile('navigateToUrl\(\'(?P<url>.*?)\'\)', re.I | re.M | re.S | re.U)
         m = re_goto.search(self.body)
         if m is None:
-            raise ParseError('goto(\'...\') not found')
+            raise ParseError('navigateToUrl(\'...\') not found')
 
         self.goto = m.group('url')
         return self

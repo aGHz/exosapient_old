@@ -65,7 +65,7 @@ class ManageCommand(Command):
         try:
             nr_statements = int(args[0])
         except Exception:
-            nr_statements = 0
+            nr_statements = 1
 
         from exosapient.util.mbna import MBNA
         mbna = MBNA()
