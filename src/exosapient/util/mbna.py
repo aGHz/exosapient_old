@@ -7,16 +7,20 @@ import urllib
 import urllib2
 import urlparse
 
+from xo.scraping.exc import ParseError, RequestError
+from xo.scraping.page import Page, FormPage
+from xo.scraping.session import Session
+
 from exosapient.model.local import mbna_user, mbna_security, mbna_pass
-from exosapient.util import scraping
 from exosapient.util.ansi import colors as ansi
+
 
 MONTHS = dict(zip(['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August',
                    'September', 'October', 'November', 'December'
                   ], range(1, 13)))
 
 def login(cookie_jar=None):
-    session = scraping.Session(jar=cookie_jar)
+    session = Session(jar=cookie_jar)
     mbnahome = MBNAHomePage(session=session).request().parse()
     security = mbnahome.next(user=mbna_user).parse() # already requested in MBNAHomePage
     password = security.next(answer=mbna_security[security.question]).request().parse()
@@ -24,7 +28,7 @@ def login(cookie_jar=None):
     return overview
 
 def test(cookie_jar=None):
-    session = scraping.Session(jar=cookie_jar)
+    session = Session(jar=cookie_jar)
 
     mbnahome = MBNAHomePage(session=session).request().parse()
     security = mbnahome.next(user=mbna_user).parse()
@@ -43,7 +47,7 @@ def test(cookie_jar=None):
     return (session, overview, snapshot, statement, s1)
 
 def test1(cookie_jar=None):
-    session = scraping.Session(jar=cookie_jar)
+    session = Session(jar=cookie_jar)
 
     mbnahome = MBNAHomePage(session=session).request().parse()
     security = mbnahome.next(user=mbna_user).parse()
@@ -61,16 +65,16 @@ class MBNA(object):
     statements = {}
 
     def __init__(self, login=True, cookie_jar=None):
-        self.session = scraping.Session(jar=cookie_jar)
+        self.session = Session(jar=cookie_jar)
         if login:
             self.get_overview()
 
     def get_overview(self):
         if self.overview is None:
-            mbnahome = MBNAHomePage(session=self.session).request().parse()
+            mbnahome = MBNAHomePage(session=self.session).parse()
             security = mbnahome.next(user=mbna_user).parse()
-            password = security.next(answer=mbna_security[security.question]).request().parse()
-            overview = password.next(password=mbna_pass).request().parse()
+            password = security.next(answer=mbna_security[security.question]).parse()
+            overview = password.next(password=mbna_pass).parse()
 
             self.overview = overview
 
@@ -84,7 +88,7 @@ class MBNA(object):
         if self.overview is None:
             self.get_overview()
         if force or account not in self.snapshots:
-            self.snapshots[account] = self.overview.next(account=account).request().parse()
+            self.snapshots[account] = self.overview.next(account=account).parse()
         return self.snapshots[account]
 
     def load_snapshots(self, force=True):
@@ -101,7 +105,7 @@ class MBNA(object):
             self.statements[account] = {}
         snapshot = self.get_snapshot(account)
         if force or not self.statements.get(account, False):
-            statement = snapshot.next(link='statements').request().parse()
+            statement = snapshot.next(link='statements').parse()
             self.statements[account][statement.date] = statement
         else:
             statement = self.statements[account].values()[0]
@@ -119,7 +123,7 @@ class MBNA(object):
             latest = self.get_latest_statement(account, force=True)
         else:
             latest = self.statements[account].values()[0]
-        statement = latest.next(statement_index=index).request().parse()
+        statement = latest.next(statement_index=index).parse()
         self.statements[account][statement.date] = statement
         return statement
 
@@ -153,23 +157,20 @@ class MBNA(object):
         return "\n".join(out)
 
 
-class MBNAHomePage(scraping.FormPage):
+class MBNAHomePage(FormPage):
     def __init__(self, url='http://mbna.ca/index.html', *args, **kwargs):
         return super(MBNAHomePage, self).__init__(url=url, *args, **kwargs)
 
-    def parse(self, body=None):
-        if body is not None:
-            self.body = body
-        soup = body_to_soup(self.body)
-
-        form = soup.find('form')
+    @Page.parser
+    def parse(self):
+        form = self.soup.find('form')
         if not form.select('div.signinform'):
-            raise scraping.ParseError('div.signinform not found in first form')
+            raise ParseError('div.signinform not found in first form')
 
         self.form = form
         self.parse_form()
         if 'username' not in self.form_data:
-            raise scraping.ParseError('input[name="username"] not found')
+            raise ParseError('input[name="username"] not found')
         return self
 
     def next(self, user):
@@ -181,21 +182,19 @@ class MBNAHomePage(scraping.FormPage):
             raise MaintenanceError()
         try:
             redirect = ChallengeRedirect(url=resp.url, body=body, session=self.session).parse()
-        except scraping.ParseError:
+        except ParseError:
             return SecurityQuestion(url=resp.url, body=body, session=self.session)
         else:
-            return redirect.next().request()
+            return redirect.next()
 
 
-class ChallengeRedirect(scraping.Page):
-    def parse(self, body=None):
-        if body is not None:
-            self.body = body
-
+class ChallengeRedirect(Page):
+    @Page.parser
+    def parse(self):
         re_goto = re.compile('goto\(\'(?P<url>.*?)\'\)', re.I | re.M | re.S | re.U)
         m = re_goto.search(self.body)
         if m is None:
-            raise scraping.ParseError('goto(\'...\') not found')
+            raise ParseError('goto(\'...\') not found')
 
         self.goto = m.group('url')
         return self
@@ -205,22 +204,19 @@ class ChallengeRedirect(scraping.Page):
         return SecurityQuestion(url=url, session=self.session)
 
 
-class SecurityQuestion(scraping.FormPage):
-    def parse(self, body=None):
-        if body is not None:
-            self.body = body
-        soup = body_to_soup(self.body)
-
+class SecurityQuestion(FormPage):
+    @Page.parser
+    def parse(self):
         try:
-            q = soup.select('label#question_id')[0]
+            q = self.soup.select('label#question_id')[0]
         except Exception:
-            raise scraping.ParseError('label#question_id not found')
+            raise ParseError('label#question_id not found')
 
         self.question = q.text
         self.form = q.find_parent('form')
         self.parse_form()
         if 'answer' not in self.form_data:
-            raise scraping.ParseError('input[name="answer"] not found')
+            raise ParseError('input[name="answer"] not found')
         return self
 
     def next(self, answer):
@@ -228,20 +224,17 @@ class SecurityQuestion(scraping.FormPage):
         return PasswordPage(url=self.form_action, data=self.form_data, session=self.session)
 
 
-class PasswordPage(scraping.FormPage):
-    def parse(self, body=None):
-        if body is not None:
-            self.body = body
-        soup = body_to_soup(self.body)
-
-        form = soup.find('form', id='pwd_form.id')
+class PasswordPage(FormPage):
+    @Page.parser
+    def parse(self):
+        form = self.soup.find('form', id='pwd_form.id')
         if form is None:
-            raise scraping.ParseError('form[id="pwd_form.id"] not found')
+            raise ParseError('form[id="pwd_form.id"] not found')
 
         self.form = form
         self.parse_form()
         if 'password' not in self.form_data:
-            raise scraping.ParseError('input[name="password"] not found')
+            raise ParseError('input[name="password"] not found')
         return self
 
     def next(self, password):
@@ -249,14 +242,11 @@ class PasswordPage(scraping.FormPage):
         return OverviewPage(url=self.form_action, data=self.form_data, session=self.session)
 
 
-class OverviewPage(scraping.Page):
-    def parse(self, body=None):
-        if body is not None:
-            self.body = body
-        soup = body_to_soup(self.body)
-
+class OverviewPage(Page):
+    @Page.parser
+    def parse(self):
         accounts = {}
-        account_tds = soup.select('td.accountName')
+        account_tds = self.soup.select('td.accountName')
         for account_td in account_tds:
             a = account_td.find('a')
             number = re.search('ending in (?P<cc>\d+)', a.text).group('cc')
@@ -315,14 +305,11 @@ class OverviewPage(scraping.Page):
                            **ansi)
 
 
-class SnapshotPage(scraping.Page):
-    def parse(self, body=None):
-        if body is not None:
-            self.body = body
-        soup = body_to_soup(self.body)
-
+class SnapshotPage(Page):
+    @Page.parser
+    def parse(self):
         # Extract last 4 digits from page header
-        header = soup.find('form', action='HeaderController')
+        header = self.soup.find('form', action='HeaderController')
         account = header.find('td', class_='accountIdContainer').stripped_strings.next()
         account = re.match('^.* ending in (?P<cc>\d+)$', account).group('cc')
         self.account = account
@@ -424,7 +411,7 @@ class SnapshotPage(scraping.Page):
 
         # Extract various links
         self.links = {}
-        statements_a = soup.find('a', text=re.compile('Statements'))
+        statements_a = self.soup.find('a', text=re.compile('Statements'))
         if statements_a is None:
             raise ParseError('a[text="Statements"] not found')
         self.links['statements'] = urlparse.urljoin(self.url, statements_a['href'])
@@ -583,18 +570,15 @@ class SnapshotPage(scraping.Page):
 
 
 
-class StatementPage(scraping.FormPage):
-    def parse(self, body=None):
-        if body is not None:
-            self.body = body
-        soup = body_to_soup(self.body)
-
+class StatementPage(FormPage):
+    @Page.parser
+    def parse(self):
         # Parse list of available statements
-        stmts_select = soup.select('select[name="STMT"]')
+        stmts_select = self.soup.select('select[name="STMT"]')
         if stmts_select:
             stmts_select = stmts_select[0]
         else:
-            raise scraping.ParseError('select[name="STMT"] not found')
+            raise ParseError('select[name="STMT"] not found')
         self.form = stmts_select.find_parent('form')
         self.parse_form()
         self.form_data['acrobatCheck'] = 3
@@ -611,12 +595,12 @@ class StatementPage(scraping.FormPage):
         del self.form_data['STMT']
 
         # Parse statement date
-        stmt_date = soup.find('p', class_='stmtDate').text.strip()
+        stmt_date = self.soup.find('p', class_='stmtDate').text.strip()
         (m, d, y) = re.match('^(\w*) (\d*), (\d*)$', stmt_date).groups()
         self.date = datetime.date(int(y), MONTHS[m], int(d))
 
         # Parse statement header data
-        header_t = soup.find('table', class_='acctdetailmodule')
+        header_t = self.soup.find('table', class_='acctdetailmodule')
         header_ths = [" ".join(map(lambda s: s.strip(), th.strings)) for th in header_t.findAll('th')]
         header_tds = [" ".join(map(lambda s: s.strip(), td.strings)) for td in header_t.findAll('td')]
         header = dict(zip(header_ths, header_tds))
@@ -636,7 +620,7 @@ class StatementPage(scraping.FormPage):
         self.pay_date = header['Total Min. Payment Due Date']
 
         # Parse statement activity
-        activity_t = soup.find('table', class_='acctregistermodule')
+        activity_t = self.soup.find('table', class_='acctregistermodule')
         activity_trs = activity_t.find_all('tr')[1:]
         activity_data = [[td.text.strip() for td in tr.find_all('td')] for tr in activity_trs]
         currencies = {
@@ -789,8 +773,3 @@ def str_to_date(s):
     else:
         return date
 
-def body_to_soup(body):
-    soup = BeautifulSoup(body)
-    comments = soup.find_all(text=lambda e: isinstance(e, Comment))
-    map(lambda e: e.extract(), comments) # they pose problems, just get them out
-    return soup

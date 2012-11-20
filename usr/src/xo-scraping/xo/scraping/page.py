@@ -40,17 +40,17 @@ class Page(object):
         return self
 
     @classmethod
-    def parser(cls, f):
-        @wraps(f)
-        def wrapper(self, *args, **kwargs):
+    def parser(cls, parser):
+        @wraps(parser)
+        def wrapper_parser(self, *args, **kwargs):
             if self.body is None:
                 if '_body' in kwargs:
                     self.body = kwargs['_body']
                 else:
                     self.request(**kwargs.get('_data', {}))
             self.soup = body_to_soup(self.body)
-            return f(self, *args, **kwargs)
-        return wrapper
+            return parser(self, *args, **kwargs)
+        return wrapper_parser
 
 class FormPage(Page):
     def parse_form(self, *args, **kwargs):
