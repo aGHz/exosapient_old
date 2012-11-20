@@ -7,10 +7,7 @@ import urllib
 import urllib2
 import urlparse
 
-from xo.scraping.exc import ParseError, RequestError
-from xo.scraping.page import Page, FormPage
-from xo.scraping.session import Session
-
+from xo.scraping import ParseError, RequestError, Page, FormPage, Session
 from exosapient.model.local import mbna_user, mbna_security, mbna_pass
 from exosapient.util.ansi import colors as ansi
 
