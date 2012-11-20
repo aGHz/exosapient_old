@@ -51,7 +51,24 @@ class Page(object):
                 else:
                     self.request(**kwargs.get('_data', {}))
             self.soup = body_to_soup(self.body)
-            return parser(self, *args, **kwargs)
+            if kwargs.get('_save', False):
+                from datetime import datetime
+                f = open('/tmp/{cls}_{now}.html'.format(
+                    cls=self.__class__.__name__,
+                    now=datetime.now().strftime('%Y%m%d_%H%M')), 'w')
+                f.write(BeautifulSoup(self.body).prettify().encode('utf8')) # want comments, don't use body_to_soup
+                f.close()
+            try:
+                return parser(self, *args, **kwargs)
+            except Exception:
+                if not kwargs.get('_save', False):
+                    from datetime import datetime
+                    f = open('/tmp/{cls}_{now}.html'.format(
+                        cls=self.__class__.__name__,
+                        now=datetime.now().strftime('%Y%m%d_%H%M')), 'w')
+                    f.write(self.soup.prettify().encode('utf8'))
+                    f.close()
+                raise
         return wrapper_parser
 
 class FormPage(Page):
