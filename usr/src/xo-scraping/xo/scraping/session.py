@@ -24,16 +24,18 @@ class Session(object):
 
         # Prepare urllib2 opener
         self.opener = urllib2.build_opener(urllib2.HTTPCookieProcessor(self.jar))
-        ua_string = user_agent(ua_string)
-        if ua_string is not None:
-            self.opener.addheaders = [('User-agent', ua_string)]
+        self._headers = {'User-agent': user_agent(ua_string)}
 
     def get(self, url):
+        self.opener.addheaders = self.headers
         resp = self.opener.open(url)
+        del self.referrer
         return (resp, resp.read())
 
     def post(self, url, data):
+        self.opener.addheaders = self.headers
         resp = self.opener.open(url, urllib.urlencode(data))
+        del self.referrer
         return (resp, resp.read())
 
     def cookies(self, name=None):
@@ -48,4 +50,20 @@ class Session(object):
         print '--- [cookie jar] ' + '-' * 62
         for cookie in self.jar: print cookie
         print '-' * 79
+
+    @property
+    def headers(self):
+        return [(k, v) for k, v in self._headers.iteritems() if v is not None]
+
+    @property
+    def referrer(self):
+        return self._headers.get('Referer', None)
+
+    @referrer.setter
+    def referrer(self, referrer):
+        self._headers['Referer'] = referrer
+
+    @referrer.deleter
+    def referrer(self):
+        self._headers.pop('Referer', None)
 

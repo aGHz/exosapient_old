@@ -5,6 +5,8 @@ import urlparse
 from xo.scraping.exc import ParseError, RequestError
 from xo.scraping.session import Session
 
+_DEBUG = False
+
 
 class Page(object):
     def __init__(self, body=None, session=None, url=None, data=None, _parse=True, *args, **kwargs):
@@ -34,6 +36,12 @@ class Page(object):
         if self.data is None:
             (self.response, self.body) = self.session.get(self.url)
         else:
+            if _DEBUG:
+                from pprint import pprint
+                print "POST"
+                print self.url
+                pprint(self.data)
+                self.session.print_cookies()
             (self.response, self.body) = self.session.post(self.url, self.data)
         self.url = self.response.url
         return self
