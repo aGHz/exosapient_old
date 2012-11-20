@@ -633,6 +633,11 @@ class StatementPage(FormPage):
             'Purchases and Adjustments': 'credit',
             'Interest Charged': 'interest',
             }
+        interests = {
+            'Interest on Balance Transfers': 'transfers',
+            'Interest on Access Cheques & Deposits': 'cheques',
+            'Interest on Cash Advances': 'cash',
+            }
         activity = []
         activity_type = None
         for row in activity_data:
@@ -651,8 +656,11 @@ class StatementPage(FormPage):
                         'foreign_currency': currencies.get(currency, currency),
                         })
                     continue
-                if desc.startswith('Interest on'):
-                    trans_date = activity[-1]['trans_date']
+                if desc in interests:
+                    if 'interests' not in activity[-1]:
+                        activity[-1]['interests'] = {}
+                    activity[-1]['interests'][interests[desc]] = amt
+                    continue
             act = {
                 'type': activity_type,
                 'trans_date': trans_date,
@@ -740,6 +748,11 @@ class StatementPage(FormPage):
             line += color + "{desc}{reset}"
             if activity.get('location', None):
                 line += ", {location}{reset}"
+
+            # various interest types
+            if 'interests' in activity:
+                for interest, amount in activity['interests'].iteritems():
+                    line += "{yellow}, {amt:.2f} {interest}{reset}".format(amt=amount, interest=interest, **ansi)
 
             out += [line.format(date=act_date,
                                 amount=activity['amount'],
