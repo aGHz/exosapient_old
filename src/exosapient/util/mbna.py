@@ -9,6 +9,8 @@ from exosapient.model.local import mbna_user, mbna_security, mbna_pass
 from exosapient.util.ansi import colors as ansi
 
 
+# TODO add referrers to the various Page classes
+
 MONTHS = dict(zip(['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August',
                    'September', 'October', 'November', 'December'
                   ], range(1, 13)))

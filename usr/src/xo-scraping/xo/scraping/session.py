@@ -55,6 +55,8 @@ class Session(object):
     def headers(self):
         return [(k, v) for k, v in self._headers.iteritems() if v is not None]
 
+    # TODO blah, move referrer to Page.__init__/request
+
     @property
     def referrer(self):
         return self._headers.get('Referer', None)
