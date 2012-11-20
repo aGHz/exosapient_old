@@ -67,13 +67,8 @@ class ManageCommand(Command):
         except Exception:
             nr_statements = 1
 
-        from exosapient.util.mbna import MBNA
-        mbna = MBNA()
-        mbna.load_snapshots()
-        if nr_statements > 0:
-            mbna.load_latest_statements()
-        for i in range(1, nr_statements):
-            mbna.load_statements(i)
+        from exosapient.util.mbna import run as run_mbna
+        mbna = run_mbna(nr_statements)
         print mbna.__ansistr__()
 
     def _load_app(self):

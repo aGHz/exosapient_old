@@ -16,14 +16,6 @@ MONTHS = dict(zip(['January', 'February', 'March', 'April', 'May', 'June', 'July
                    'September', 'October', 'November', 'December'
                   ], range(1, 13)))
 
-def login(cookie_jar=None):
-    session = Session(jar=cookie_jar)
-    mbnahome = MBNAHomePage(session=session)
-    security = mbnahome.next(user=mbna_user) # already requested in MBNAHomePage
-    password = security.next(answer=mbna_security[security.question])
-    overview = password.next(password=mbna_pass)
-    return overview
-
 def test(cookie_jar=None):
     session = Session(jar=cookie_jar)
 
@@ -43,16 +35,14 @@ def test(cookie_jar=None):
 
     return (session, overview, snapshot, statement, s1)
 
-def test1(cookie_jar=None):
-    session = Session(jar=cookie_jar)
-
-    mbnahome = MBNAHomePage(session=session)
-    security = mbnahome.next(user=mbna_user)
-    password = security.next(answer=mbna_security[security.question])
-    overview = password.next(password=mbna_pass)
-    snapshot = overview.next(account=overview.__dict__.keys()[0])
-
-    return (session, overview, snapshot)
+def run(nr_statements=1):
+    mbna = MBNA()
+    mbna.load_snapshots()
+    if nr_statements > 0:
+        mbna.load_latest_statements()
+    for i in range(1, nr_statements):
+        mbna.load_statements(i)
+    return mbna
 
 
 class MBNA(object):
