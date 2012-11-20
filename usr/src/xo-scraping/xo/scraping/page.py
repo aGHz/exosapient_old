@@ -90,7 +90,9 @@ def parse_bs4_form(form, base_url=None):
 
     inputs = {}
     for inp in form.find_all('input'):
-        inputs[inp['name']] = dict(inp.attrs)
+        name = inp.get('name')
+        if name:
+            inputs[name] = dict(inp.attrs)
 
     data = dict(zip(inputs.keys(), [attrs.get('value', '').encode('ascii', 'ignore') for attrs in inputs.values()]))
 
