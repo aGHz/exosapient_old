@@ -11,7 +11,7 @@ from exosapient.commands.manage import example
 
 
 COMMANDS = ['show_config', 'show_commands', # system commands
-            'example', 'mbna', # application commands
+            'example', 'mbna', 'bmo', # application commands
             ]
 
 class ManageCommand(Command):
@@ -70,6 +70,12 @@ class ManageCommand(Command):
         from exosapient.util.mbna import run as run_mbna
         mbna = run_mbna(nr_statements)
         print mbna.__ansistr__()
+
+    def bmo(self, *args):
+        """Show information on BMO accounts"""
+        from exosapient.util.bmo import run as run_bmo
+        bmo = run_bmo()
+        print bmo.__ansistr__()
 
     def _load_app(self):
         config_file = self.options.config_file

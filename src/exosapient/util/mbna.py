@@ -1,10 +1,7 @@
-from bs4 import BeautifulSoup, Comment
-import cookielib
 import datetime
 from pprint import pprint
 import re
 import urllib
-import urllib2
 import urlparse
 
 from xo.scraping import ParseError, RequestError, Page, FormPage, Session

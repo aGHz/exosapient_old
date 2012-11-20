@@ -40,8 +40,8 @@ print 'from bs4 import {cls}BeautifulSoup{r}'.format(**_ansi)
 from bs4 import BeautifulSoup
 print 'from xo import {mdl}scraping{r}'.format(**_ansi)
 from xo import scraping
-print 'from exosapient.util import {mdl}mbna{r}'.format(**_ansi)
-from exosapient.util import mbna
+print 'from exosapient.util import {mdl}mbna{r}, {mdl}bmo{r}'.format(**_ansi)
+from exosapient.util import mbna, bmo
 
 print ''
 print 'Admin shell'
