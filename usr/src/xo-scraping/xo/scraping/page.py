@@ -7,13 +7,15 @@ from xo.scraping.session import Session
 
 
 class Page(object):
-    def __init__(self, body=None, session=None, url=None, data=None, *args, **kwargs):
+    def __init__(self, body=None, session=None, url=None, data=None, _parse=True, *args, **kwargs):
         if session is None:
             session = Session()
         self.session = session
         self.url = url
         self.data = data
         self.body = body
+        if _parse:
+            self.parse()
 
     def request(self, url=None, data=None, force=False, *args, **kwargs):
         if self.body is not None and not force:

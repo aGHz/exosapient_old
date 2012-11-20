@@ -21,23 +21,23 @@ MONTHS = dict(zip(['January', 'February', 'March', 'April', 'May', 'June', 'July
 
 def login(cookie_jar=None):
     session = Session(jar=cookie_jar)
-    mbnahome = MBNAHomePage(session=session).request().parse()
-    security = mbnahome.next(user=mbna_user).parse() # already requested in MBNAHomePage
-    password = security.next(answer=mbna_security[security.question]).request().parse()
-    overview = password.next(password=mbna_pass).request().parse()
+    mbnahome = MBNAHomePage(session=session)
+    security = mbnahome.next(user=mbna_user) # already requested in MBNAHomePage
+    password = security.next(answer=mbna_security[security.question])
+    overview = password.next(password=mbna_pass)
     return overview
 
 def test(cookie_jar=None):
     session = Session(jar=cookie_jar)
 
-    mbnahome = MBNAHomePage(session=session).request().parse()
-    security = mbnahome.next(user=mbna_user).parse()
-    password = security.next(answer=mbna_security[security.question]).request().parse()
-    overview = password.next(password=mbna_pass).request().parse()
-    snapshot = overview.next(account=overview.__dict__.keys()[0]).request().parse()
+    mbnahome = MBNAHomePage(session=session)
+    security = mbnahome.next(user=mbna_user)
+    password = security.next(answer=mbna_security[security.question])
+    overview = password.next(password=mbna_pass)
+    snapshot = overview.next(account=overview.__dict__.keys()[0])
 
-    statement = snapshot.next(link='statements').request().parse()
-    s1 = statement.next(statement_index=3).request().parse()
+    statement = snapshot.next(link='statements')
+    s1 = statement.next(statement_index=3)
 
     pprint(overview.__dict__)
     pprint(snapshot.__dict__)
@@ -49,11 +49,11 @@ def test(cookie_jar=None):
 def test1(cookie_jar=None):
     session = Session(jar=cookie_jar)
 
-    mbnahome = MBNAHomePage(session=session).request().parse()
-    security = mbnahome.next(user=mbna_user).parse()
-    password = security.next(answer=mbna_security[security.question]).request().parse()
-    overview = password.next(password=mbna_pass).request().parse()
-    snapshot = overview.next(account=overview.__dict__.keys()[0]).request().parse()
+    mbnahome = MBNAHomePage(session=session)
+    security = mbnahome.next(user=mbna_user)
+    password = security.next(answer=mbna_security[security.question])
+    overview = password.next(password=mbna_pass)
+    snapshot = overview.next(account=overview.__dict__.keys()[0])
 
     return (session, overview, snapshot)
 
@@ -71,10 +71,10 @@ class MBNA(object):
 
     def get_overview(self):
         if self.overview is None:
-            mbnahome = MBNAHomePage(session=self.session).parse()
-            security = mbnahome.next(user=mbna_user).parse()
-            password = security.next(answer=mbna_security[security.question]).parse()
-            overview = password.next(password=mbna_pass).parse()
+            mbnahome = MBNAHomePage(session=self.session)
+            security = mbnahome.next(user=mbna_user)
+            password = security.next(answer=mbna_security[security.question])
+            overview = password.next(password=mbna_pass)
 
             self.overview = overview
 
@@ -88,7 +88,7 @@ class MBNA(object):
         if self.overview is None:
             self.get_overview()
         if force or account not in self.snapshots:
-            self.snapshots[account] = self.overview.next(account=account).parse()
+            self.snapshots[account] = self.overview.next(account=account)
         return self.snapshots[account]
 
     def load_snapshots(self, force=True):
@@ -105,7 +105,7 @@ class MBNA(object):
             self.statements[account] = {}
         snapshot = self.get_snapshot(account)
         if force or not self.statements.get(account, False):
-            statement = snapshot.next(link='statements').parse()
+            statement = snapshot.next(link='statements')
             self.statements[account][statement.date] = statement
         else:
             statement = self.statements[account].values()[0]
@@ -123,7 +123,7 @@ class MBNA(object):
             latest = self.get_latest_statement(account, force=True)
         else:
             latest = self.statements[account].values()[0]
-        statement = latest.next(statement_index=index).parse()
+        statement = latest.next(statement_index=index)
         self.statements[account][statement.date] = statement
         return statement
 
@@ -181,7 +181,7 @@ class MBNAHomePage(FormPage):
         if 'Maintenance' in resp.url:
             raise MaintenanceError()
         try:
-            redirect = ChallengeRedirect(url=resp.url, body=body, session=self.session).parse()
+            redirect = ChallengeRedirect(url=resp.url, body=body, session=self.session)
         except ParseError:
             return SecurityQuestion(url=resp.url, body=body, session=self.session)
         else:
