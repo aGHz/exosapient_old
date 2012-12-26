@@ -60,7 +60,7 @@ class Page(object):
                     self.request(**kwargs.get('_data', {}))
             self.soup = body_to_soup(self.body)
             save = kwargs.get('_save', False)
-            if save:
+            if save or _DEBUG:
                 from datetime import datetime
                 f = open('/tmp/{cls}_{now}.html'.format(
                     cls=self.__class__.__name__,
@@ -73,7 +73,8 @@ class Page(object):
                 if '_save' in kwargs: del kwargs['_save']
                 return parser(self, *args, **kwargs)
             except Exception:
-                if not save:
+                # Save the response on exception, but only if not called with _save=True
+                if not save and not _DEBUG:
                     from datetime import datetime
                     f = open('/tmp/{cls}_{now}.html'.format(
                         cls=self.__class__.__name__,
