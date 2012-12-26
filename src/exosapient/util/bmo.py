@@ -1,5 +1,6 @@
 from xo.scraping import ParseError, RequestError, Page, FormPage, Session
-from exosapient.model.local import bmo_number
+from exosapient.model.local import bmo_number, bmo_pass, bmo_security,\
+                                   bmo_personal_phrase, bmo_personal_image
 
 
 def run():
@@ -18,8 +19,13 @@ class BMO(object):
     def login(self):
         self.bmohome = BMOHomePage(session=self.session)
         self.card = self.bmohome.next()
-        self.security = self.card.next(number=bmo_number).parse(_save=True)
-
+        self.security = self.card.next(number=bmo_number)
+        self.password = self.security.next(answer=bmo_security[self.security.question])
+        if not self.password.personal_phrase == bmo_personal_phrase:
+            raise SecurityError('Personal phrase does not match: "{0}"'.format(self.password.personal_phrase))
+        if not self.password.personal_image == bmo_personal_image:
+            raise SecurityError('Personal image does not match: "{0}"'.format(self.password.personal_image))
+        self.overview = self.password.next(password=bmo_pass)
 
     def __ansistr__(self):
         out = []
@@ -39,8 +45,8 @@ class BMOHomePage(Page):
         self.link = link['href']
         return self
 
+    @Page.self_referrer
     def next(self):
-        self.session.referrer = self.url
         return CardNumberPage(url=self.link, session=self.session)
 
 class CardNumberPage(FormPage):
@@ -56,10 +62,10 @@ class CardNumberPage(FormPage):
             raise ParseError('input[name="FBC_Number"] not found')
         return self
 
+    @Page.self_referrer
     def next(self, number):
         self.form_data.update({'FBC_Number': number, 'pm_fp': self._fingerprints()})
         action = self.form_action + '?product=5' # according to JS submitTo()
-        self.session.referrer = self.url
         return SecurityQuestion(url=action, data=self.form_data, session=self.session)
 
     def _fingerprints(self):
@@ -87,4 +93,68 @@ class CardNumberPage(FormPage):
 class SecurityQuestion(FormPage):
     @Page.parser
     def parse(self):
+        form = self.soup.find('form', id='regChallengeQuestion')
+        if not form:
+            raise ParseError('form[id="regChallengeQuestion"] not found')
+
+        self.form = form
+        self.parse_form()
+        if 'answer' not in self.form_data:
+            raise ParseError('input[name="answer"] not found')
+
+        try:
+            q = form.select('label#lblregSecurityQuestion')[0]
+        except Exception:
+            raise ParseError('label#lblregSecurityQuestion not found')
+        self.question = q.text
+
         return self
+
+    @Page.self_referrer
+    def next(self, answer):
+        self.form_data.update({'answer': answer})
+        return PasswordPage(url=self.form_action, data=self.form_data, session=self.session)
+
+
+class PasswordPage(FormPage):
+    @Page.parser
+    def parse(self):
+        form = self.soup.find('form', id='regSignInForm')
+        if form is None:
+            raise ParseError('form[id="regSignInForm"] not found')
+
+        self.form = form
+        self.parse_form()
+        if 'FBC_Password' not in self.form_data:
+            raise ParseError('input[name="FBC_Password"] not found')
+
+        self.personal_phrase = None
+        self.personal_image = None
+        for dt in form.find_all('dt'):
+            if dt.text.strip() == 'Personal Phrase:':
+                try:
+                    self.personal_phrase = dt.find_next_sibling('dd').text.strip()
+                except Exception:
+                    raise ParseError('dt[content="Personal Phrase:"] + dd not found')
+            elif dt.text.strip() == 'Personal Image:':
+                try:
+                    self.personal_image = dt.find_next_sibling('dd').find('img')['alt']
+                except Exception:
+                    raise ParseError('dt[content="Personal Image:"] + dd > img not found')
+
+        return self
+
+    @Page.self_referrer
+    def next(self, password):
+        self.form_data.update({'FBC_Password': password})
+        return OverviewPage(url=self.form_action, data=self.form_data, session=self.session)
+
+
+class OverviewPage(Page):
+    @Page.parser
+    def parse(self):
+        return self
+
+
+class SecurityError(Exception):
+    pass
