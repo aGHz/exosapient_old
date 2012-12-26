@@ -1,4 +1,4 @@
-from xo.scraping import ParseError, RequestError, Page, FormPage, Session
+from xo.scraping import ParseError, RequestError, Page, FormPage, DummyPage, Session
 from exosapient.model.local import bmo_number, bmo_pass, bmo_security,\
                                    bmo_personal_phrase, bmo_personal_image
 
@@ -66,7 +66,16 @@ class CardNumberPage(FormPage):
     def next(self, number):
         self.form_data.update({'FBC_Number': number, 'pm_fp': self._fingerprints()})
         action = self.form_action + '?product=5' # according to JS submitTo()
-        return SecurityQuestion(url=action, data=self.form_data, session=self.session)
+        page = SecurityQuestion(url=action, data=self.form_data, session=self.session, _parse=False)
+        try:
+            page.parse()
+        except ParseError:
+            # It seems BMO somehow honors the 'remember me' setting for the scraper,
+            # so the page could actually be directly a PasswordPage
+            page = PasswordPage(url=page.url, body=page.body, session=self.session)
+            return DummyPage(page, question='Security question skipped')
+        else:
+            return page
 
     def _fingerprints(self):
         # this replicates the function post_fingerprints in pm_fp.js
