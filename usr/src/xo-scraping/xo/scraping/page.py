@@ -83,6 +83,14 @@ class Page(object):
                 raise
         return wrapper_parser
 
+    @classmethod
+    def self_referrer(cls, next_func):
+        @wraps(next_func)
+        def wrapper_next(self, *args, **kwargs):
+            self.session.referrer = self.url
+            return next_func(self, *args, **kwargs)
+        return wrapper_next
+
 class FormPage(Page):
     def parse_form(self, *args, **kwargs):
         (self.form_action,

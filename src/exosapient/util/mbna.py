@@ -9,8 +9,6 @@ from exosapient.model.local import mbna_user, mbna_security, mbna_pass
 from exosapient.util.ansi import colors as ansi
 
 
-# TODO add referrers to the various Page classes
-
 MONTHS = dict(zip(['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August',
                    'September', 'October', 'November', 'December'
                   ], range(1, 13)))
@@ -159,6 +157,7 @@ class MBNAHomePage(FormPage):
             raise ParseError('input[name="username"] not found')
         return self
 
+    @Page.self_referrer
     def next(self, user):
         # We must perform the request here to check if it's a challenge redirect page,
         # a maintenance page or a security question page, so you only need to parse() the result
@@ -186,6 +185,7 @@ class ChallengeRedirect(Page):
         self.goto = m.group('url')
         return self
 
+    @Page.self_referrer
     def next(self):
         url = urlparse.urljoin(self.url, self.goto)
         return SecurityQuestion(url=url, session=self.session)
@@ -206,6 +206,7 @@ class SecurityQuestion(FormPage):
             raise ParseError('input[name="answer"] not found')
         return self
 
+    @Page.self_referrer
     def next(self, answer):
         self.form_data.update({'answer': answer})
         return PasswordPage(url=self.form_action, data=self.form_data, session=self.session)
@@ -224,6 +225,7 @@ class PasswordPage(FormPage):
             raise ParseError('input[name="password"] not found')
         return self
 
+    @Page.self_referrer
     def next(self, password):
         self.form_data.update({'password': password})
         return OverviewPage(url=self.form_action, data=self.form_data, session=self.session)
@@ -261,6 +263,7 @@ class OverviewPage(Page):
         self.accounts = accounts
         return self
 
+    @Page.self_referrer
     def next(self, account=None):
         if account is not None:
             return SnapshotPage(url=self.accounts[account]['url'], session=self.session)
@@ -405,6 +408,7 @@ class SnapshotPage(Page):
 
         return self
 
+    @Page.self_referrer
     def next(self, link=None):
         if link == 'statements':
             url = self.links[link]
@@ -676,6 +680,7 @@ class StatementPage(FormPage):
 
         return self
 
+    @Page.self_referrer
     def next(self, statement_index=None):
         if statement_index is not None and statement_index < len(self.statements):
             return StatementPage(url=self.statements[statement_index]['url'], session=self.session)
