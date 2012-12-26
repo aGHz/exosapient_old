@@ -100,6 +100,44 @@ class FormPage(Page):
          self.form_data) = parse_bs4_form(self.form, self.url)
         return self
 
+class DummyPage(object):
+    """Encapsulates another page and returns it when next() is called.
+
+    This is useful if you already got a hold of a page but upon inspection
+    it turns out to be a page further down the chain. Simply create the
+    proper Page object with your current response body, and wrap it in
+    one or more DummyPages so that your call sequence can keep asking for
+    .next() without conditional logic.
+
+    Example:
+
+        page = NextPage(url=..., data=..., session=..., _parse=False)
+        try:
+            page.parse()
+        except ParseError:
+            # NextPage couldn't parse it so response must've been ActualPage
+            page = ActualPage(url=page.url, body=page.body, session=...)
+            return DummyPage(page)
+        else:
+            return page
+
+    This way in your call chain you can just:
+
+        this_page = FirstPage(...)
+        next_page = this_page.next(...) # executes the code above
+        actual_page = next_page.next(...) # NextPage.next or DummyPage.next
+
+    """
+
+    def __init__(self, other_page, **kwargs):
+        self.__other_page = other_page
+        # Dummy attrs that this page would've normally had
+        for k, v in kwargs.iteritems():
+            setattr(self, k, v)
+
+    def next(self, *args, **kwargs):
+        return self.__other_page
+
 
 def parse_bs4_form(form, base_url=None):
     if getattr(form, 'name', None) != 'form':
