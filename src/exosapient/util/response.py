@@ -1,8 +1,11 @@
 import json
-from web.core.http import WSGIHTTPException
+import mimetypes
+import os.path
+from web.core import response
+from web.core.http import WSGIHTTPException, HTTPForbidden, HTTPNotFound
 from webob.response import Response
 
-__all__ = ['TEMPLATE', 'SUCCESS', 'FAILURE',
+__all__ = ['TEMPLATE', 'SUCCESS', 'FAILURE', 'STATIC_SERVER',
            'APIException',
            'APIBadRequest', 'APIUnauthorized', 'APIForbidden', 'APINotFound', 'APIConflict',
            'APIInternalServerError', 'APINotImplemented', 'APIBadGateway',
@@ -17,6 +20,27 @@ def SUCCESS(result=''):
 
 def FAILURE(error='', data=None):
     return ('json:', {'status': 'error', 'error': error, 'result': data})
+
+class STATIC_SERVER(object):
+    def __init__(self, dir_path=None):
+        if dir_path is None:
+            pass # TODO do some magic to get the caller's dir and path.join 'static' to it
+        self.dir_path = dir_path 
+
+    def __call__(self, *args, **kwargs):
+        path = os.path.normpath(os.path.join(self.dir_path, *args))
+        if not path.startswith(self.dir_path):
+            raise HTTPForbidden()
+        elif os.path.isfile(path):
+            content_type, content_encoding = mimetypes.guess_type(path)
+            response.content_type = content_type
+            response.content_encoding = content_encoding
+            with open(path, 'rb') as fh:
+                content = fh.read()
+            response.content_length = len(content)
+            return content
+        else:
+            raise HTTPNotFound(comment=path)
 
 
 class APIException(WSGIHTTPException):
