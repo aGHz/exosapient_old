@@ -554,7 +554,7 @@ class SnapshotPage(Page):
                 line += ", {location}{reset}"
                 params['location'] = activity['location']
 
-            out += [line.format(**params)]
+            out += [line.decode('utf-8').format(**params)]
 
         return "\n".join(out)
 
