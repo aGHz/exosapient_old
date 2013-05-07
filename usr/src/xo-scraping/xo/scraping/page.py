@@ -92,6 +92,25 @@ class Page(object):
             return next_func(self, *args, **kwargs)
         return wrapper_next
 
+    @classmethod
+    def file_downloader(cls, next_func):
+        @wraps(next_func)
+        def wrapper_next(self, *args, **kwargs):
+            if 'dest' in kwargs:
+                dest = kwargs.get('dest', None)
+                del kwargs['dest']
+            else:
+                raise RequestError('Destination filename not provided')
+            url = next_func(self, *args, **kwargs)
+            if url:
+                (resp, body) = self.session.get(url)
+                with open(dest, 'wb') as fh:
+                    fh.write(body)
+                return dest
+            else:
+                return False
+        return wrapper_next
+
 class FormPage(Page):
     def parse_form(self, *args, **kwargs):
         (self.form_action,
