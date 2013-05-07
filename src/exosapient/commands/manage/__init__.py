@@ -7,13 +7,13 @@ from paste.script.command import Command, BadCommand
 import sys
 from web.core import config
 
-from exosapient.commands.manage import example
-from exosapient.apt.commands import craigslist
+from exosapient.apt.commands import craigslist, kijiji
+from exosapient.fin.commands import mbna, bmo
 
 
 COMMANDS = ['show_config', 'show_commands', # system commands
-            'example', 'mbna', 'bmo', # application commands
-            'apt_craigslist', 'apt_kijiji',
+            'fin_mbna', 'fin_bmo', # financial
+            'apt_craigslist', 'apt_kijiji', # apartment listings
             ]
 
 class ManageCommand(Command):
@@ -48,47 +48,26 @@ class ManageCommand(Command):
             print '    %s - %s' % (c, getattr(self, c).__doc__)
         print ''
 
-    def example(self, *args):
-        """This is an example command. Options:
-                     example-option        This options makes the example more examplier
-                     examples=id,id,...    Makes only certain examples examplier
-        """
-        example_option = False
-        examples = None
-        for arg in args:
-            if arg.startswith('example-option') or arg.startswith('example_option'):
-                example_option = True
-            elif arg.startswith('examples='):
-                examples = arg[len('examples='):].split(',')
-        example.perform_example(example_option, examples)
 
-
-    def mbna(self, *args):
+    def fin_mbna(self, *args):
         """Show information on MBNA accounts"""
         try:
             nr_statements = int(args[0])
         except Exception:
             nr_statements = 1
+        mbna(nr_statements)
 
-        from exosapient.util.mbna import run as run_mbna
-        mbna = run_mbna(nr_statements)
-        print mbna.__ansistr__()
-
-    def bmo(self, *args):
+    def fin_bmo(self, *args):
         """Show information on BMO accounts"""
-        from exosapient.util.bmo import run as run_bmo
-        bmo = run_bmo()
-        print bmo.__ansistr__()
+        bmo()
 
 
     def apt_craigslist(self, *args):
         """Fetch the latest Craigslist posts"""
-        from exosapient.apt.commands import craigslist
         craigslist()
 
     def apt_kijiji(self, *args):
         """Fetch the latest Kijiji posts"""
-        from exosapient.apt.commands import kijiji
         kijiji()
 
 

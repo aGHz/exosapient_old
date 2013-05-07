@@ -162,6 +162,19 @@ class PasswordPage(FormPage):
 class OverviewPage(Page):
     @Page.parser
     def parse(self):
+        bank = self.soup.find('tbody', id='BankAccounts').find('td', class_='tableContainer').find('table')
+        account_tds = bank.find_all('td', class_='accountType')
+        account_trs = [td.parent for td in account_tds]
+
+        self.accounts = {}
+        for tr in account_trs:
+            account_a = tr.find('td', class_='accountType').find('a', class_='links')
+            account_type = account_a.text.strip()
+            account_goto = account_a['onclick']
+            # return goto('/fin/acc/adt/accountDetailsInit?mode=confirmation',{inquiryAccountIndex:'0',mcNumber:'0',currentOption:'0'})
+            # return goto('/fin/acc/adt/accountDetailsInit?mode=confirmation',{inquiryAccountIndex:'1',mcNumber:'1',currentOption:'0'})
+
+
         return self
 
 
