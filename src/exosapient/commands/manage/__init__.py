@@ -8,10 +8,12 @@ import sys
 from web.core import config
 
 from exosapient.commands.manage import example
+from exosapient.apt.commands import craigslist
 
 
 COMMANDS = ['show_config', 'show_commands', # system commands
             'example', 'mbna', 'bmo', # application commands
+            'apt_craigslist', 'apt_kijiji',
             ]
 
 class ManageCommand(Command):
@@ -60,6 +62,7 @@ class ManageCommand(Command):
                 examples = arg[len('examples='):].split(',')
         example.perform_example(example_option, examples)
 
+
     def mbna(self, *args):
         """Show information on MBNA accounts"""
         try:
@@ -76,6 +79,18 @@ class ManageCommand(Command):
         from exosapient.util.bmo import run as run_bmo
         bmo = run_bmo()
         print bmo.__ansistr__()
+
+
+    def apt_craigslist(self, *args):
+        """Fetch the latest Craigslist posts"""
+        from exosapient.apt.commands import craigslist
+        craigslist()
+
+    def apt_kijiji(self, *args):
+        """Fetch the latest Kijiji posts"""
+        from exosapient.apt.commands import kijiji
+        kijiji()
+
 
     def _load_app(self):
         config_file = self.options.config_file
