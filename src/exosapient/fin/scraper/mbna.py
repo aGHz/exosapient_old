@@ -32,15 +32,6 @@ def test(cookie_jar=None):
 
     return (session, overview, snapshot, statement, s1)
 
-def run(nr_statements=1):
-    mbna = MBNA()
-    mbna.load_snapshots()
-    if nr_statements > 0:
-        mbna.load_latest_statements()
-    for i in range(1, nr_statements):
-        mbna.load_statements(i)
-    return mbna
-
 
 class MBNA(object):
     session = None

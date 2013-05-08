@@ -1,11 +1,10 @@
+import re
+import urllib
+import urlparse
+
 from xo.scraping import ParseError, RequestError, Page, FormPage, DummyPage, Session
 from exosapient.model.local import bmo_number, bmo_pass, bmo_security,\
                                    bmo_personal_phrase, bmo_personal_image
-
-
-def run():
-    bmo = BMO()
-    return bmo
 
 
 class BMO(object):
@@ -166,17 +165,65 @@ class OverviewPage(Page):
         account_tds = bank.find_all('td', class_='accountType')
         account_trs = [td.parent for td in account_tds]
 
-        self.accounts = {}
+        accounts = {}
         for tr in account_trs:
             account_a = tr.find('td', class_='accountType').find('a', class_='links')
             account_type = account_a.text.strip()
-            account_goto = account_a['onclick']
+            goto = account_a['onclick']
             # return goto('/fin/acc/adt/accountDetailsInit?mode=confirmation',{inquiryAccountIndex:'0',mcNumber:'0',currentOption:'0'})
+            # -> https://www13.bmo.com/onlinebanking/OLB/fin/acc/adt/accountDetailsInit?mode=confirmation
             # return goto('/fin/acc/adt/accountDetailsInit?mode=confirmation',{inquiryAccountIndex:'1',mcNumber:'1',currentOption:'0'})
+            href = re.search(r"goto\('(?P<url>.*?)'.*?{(?P<params>.*?)}", goto).groupdict()
+            url = href['url']
+            params = dict((pair.split(':')[0], pair.split(':')[1][1:-1]) for pair in href['params'].split(','))
+
+            number = tr.find('td', class_='accountNumber').text.strip()
+            (transit, number) = number.split(" ", 1)
+
+            balance = dollar_to_float(tr.find('td', class_='totals').text.strip())
+
+            accounts[number] = {
+                'number': number,
+                'transit': transit,
+                'type': account_type,
+                'href': {
+                    'url': urlparse.urljoin(self.url, 'OLB' + url), # simulating goto() in their JS
+                    'params': params,
+                    },
+                'balance': balance,
+                }
+
+        self.accounts = accounts
+        return self
+
+    @Page.self_referrer
+    def next(self, account=None):
+        if account is not None:
+            return DetailsPage(url=self.accounts[account]['href']['url'],
+                               data=self.accounts[account]['href']['params'],
+                               session=self.session)
+
+    @property
+    def __dict__(self):
+        return self.accounts
 
 
+class DetailsPage(Page):
+    @Page.parser
+    def parse(self):
         return self
 
 
 class SecurityError(Exception):
     pass
+
+
+def dollar_to_float(s):
+    # Remove anything that isn't a digit or a period and convert to float
+    try:
+        amount = float(re.sub('[^\d.+-]', '', s))
+    except Exception:
+        return None
+    else:
+        return amount
+
