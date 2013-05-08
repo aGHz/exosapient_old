@@ -40,8 +40,10 @@ print 'from bs4 import {cls}BeautifulSoup{r}'.format(**_ansi)
 from bs4 import BeautifulSoup
 print 'from xo import {mdl}scraping{r}'.format(**_ansi)
 from xo import scraping
-print 'from exosapient.util import {mdl}mbna{r}, {mdl}bmo{r}'.format(**_ansi)
-from exosapient.util import mbna, bmo
+print 'from exosapient.fin.scraper import {cls}MBNA{r}, {cls}BMO{r}'.format(**_ansi)
+from exosapient.fin.scraper import MBNA, BMO
+#print 'from exosapient.apt.commands import {func}craigslist{r}, {func}kijiji{r}'.format(**_ansi)
+#from exosapient.apt.commands import craigslist, kijiji
 
 print ''
 print 'Admin shell'
