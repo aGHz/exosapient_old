@@ -46,8 +46,9 @@ class MBNA(object):
 
     def get_overview(self):
         if self.overview is None:
-            mbnahome = MBNAHomePage(session=self.session)
-            security = mbnahome.next(user=mbna_user)
+            homepage = HomePage(session=self.session)
+            loginpage = homepage.next()
+            security = loginpage.next(user=mbna_user)
             password = security.next(answer=mbna_security[security.question])
             overview = password.next(password=mbna_pass)
 
@@ -132,10 +133,24 @@ class MBNA(object):
         return "\n".join(out)
 
 
-class MBNAHomePage(FormPage):
+class HomePage(Page):
     def __init__(self, url='http://mbna.ca/index.html', *args, **kwargs):
-        return super(MBNAHomePage, self).__init__(url=url, *args, **kwargs)
+        return super(HomePage, self).__init__(url=url, *args, **kwargs)
 
+    @Page.parser
+    def parse(self):
+        try:
+            login_button = self.soup.select('div#loginForm a.td-button')[0]
+        except Exception:
+            raise ParseError('div#loginForm a.td-button not found')
+        self.login_link = login_button.attrs['href']
+
+    @Page.self_referrer
+    def next(self):
+        return LoginPage(url=self.login_link, session=self.session)
+
+
+class LoginPage(FormPage):
     @Page.parser
     def parse(self):
         form = self.soup.find('form')
@@ -185,6 +200,9 @@ class ChallengeRedirect(Page):
 class SecurityQuestion(FormPage):
     @Page.parser
     def parse(self):
+        if 'Unavailable' in self.soup.find('title').contents:
+            raise AvailabilityError(self.soup.find('div', class_='content'))
+
         try:
             q = self.soup.select('label#question_id')[0]
         except Exception:
@@ -750,6 +768,14 @@ class MaintenanceError(Exception):
     def __init__(self):
         super(MaintenanceError, self).__init__('MBNA site currently under maintenance')
 
+class AvailabilityError(Exception):
+    def __init__(self, content_div=None):
+        message = 'Online Banking Service Unavailable'
+        if content_div is not None:
+            ps = content_div.find_all('p', recursive=False)
+            message += ': ' + ' '.join([p.contents for p in ps])
+        super(AvailabilityError, self).__init__(message)
+            
 
 def dollar_to_float(s):
     # Remove anything that isn't a digit or a period and convert to float
