@@ -1,3 +1,4 @@
 -e usr/src/webcore
 -e usr/src/marrow.templating
 -e usr/src/marrow.util
+-e usr/src/xo-scraping
